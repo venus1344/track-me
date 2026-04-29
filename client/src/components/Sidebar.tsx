@@ -18,6 +18,7 @@ interface UnreadCount {
 const NAV_LINKS = [
   { to: '/', label: 'Dashboard', icon: '⊞', end: true },
   { to: '/board', label: 'Board', icon: '▦', end: false },
+  { to: '/calendar', label: 'Calendar', icon: '◫', end: false },
   { to: '/customers', label: 'Customers', icon: '👥', end: false },
   { to: '/notifications', label: 'Notifications', icon: '🔔', end: false },
 ];

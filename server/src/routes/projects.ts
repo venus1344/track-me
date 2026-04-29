@@ -10,6 +10,7 @@ interface ProjectRow {
   title: string;
   description: string | null;
   stage: string;
+  start_date: string | null;
   due_date: string | null;
   share_token: string | null;
   archived: number;
@@ -19,6 +20,10 @@ interface ProjectRow {
 
 export function projectRoutes(db: Database.Database): Router {
   const router = Router();
+
+  function hasInvalidTimeline(startDate?: string | null, dueDate?: string | null) {
+    return Boolean(startDate && dueDate && startDate > dueDate);
+  }
 
   // GET / — list projects with filters
   router.get('/', (req, res) => {
@@ -80,11 +85,12 @@ export function projectRoutes(db: Database.Database): Router {
 
   // POST / — create project
   router.post('/', (req, res) => {
-    const { customer_id, title, description, stage, due_date } = req.body as {
+    const { customer_id, title, description, stage, start_date, due_date } = req.body as {
       customer_id?: string;
       title?: string;
       description?: string;
       stage?: string;
+      start_date?: string;
       due_date?: string;
     };
     if (!customer_id) {
@@ -93,6 +99,10 @@ export function projectRoutes(db: Database.Database): Router {
     }
     if (!title || !title.trim()) {
       res.status(400).json({ error: 'title is required' });
+      return;
+    }
+    if (hasInvalidTimeline(start_date, due_date)) {
+      res.status(400).json({ error: 'start_date must be on or before due_date' });
       return;
     }
     const customerExists = db.prepare('SELECT id FROM customers WHERE id = ?').get(customer_id);
@@ -104,9 +114,9 @@ export function projectRoutes(db: Database.Database): Router {
     const share_token = uuid();
     const finalStage = stage ?? 'scoping';
     db.prepare(`
-      INSERT INTO projects (id, customer_id, title, description, stage, due_date, share_token)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, customer_id, title.trim(), description ?? null, finalStage, due_date ?? null, share_token);
+      INSERT INTO projects (id, customer_id, title, description, stage, start_date, due_date, share_token)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, customer_id, title.trim(), description ?? null, finalStage, start_date ?? null, due_date ?? null, share_token);
     const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
     res.status(201).json(row);
   });
@@ -119,16 +129,23 @@ export function projectRoutes(db: Database.Database): Router {
       return;
     }
     const _oldStage = existing.stage;
-    const { title, description, stage, due_date } = req.body as Partial<ProjectRow>;
+    const { title, description, stage, start_date, due_date } = req.body as Partial<ProjectRow>;
+    const finalStartDate = start_date !== undefined ? start_date : existing.start_date;
+    const finalDueDate = due_date !== undefined ? due_date : existing.due_date;
+    if (hasInvalidTimeline(finalStartDate, finalDueDate)) {
+      res.status(400).json({ error: 'start_date must be on or before due_date' });
+      return;
+    }
     db.prepare(`
       UPDATE projects
-      SET title = ?, description = ?, stage = ?, due_date = ?, updated_at = datetime('now')
+      SET title = ?, description = ?, stage = ?, start_date = ?, due_date = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(
       title ?? existing.title,
       description !== undefined ? description : existing.description,
       stage ?? existing.stage,
-      due_date !== undefined ? due_date : existing.due_date,
+      finalStartDate,
+      finalDueDate,
       req.params.id
     );
     const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
@@ -148,8 +165,33 @@ export function projectRoutes(db: Database.Database): Router {
 
   // GET /:id/activity — project activity log
   router.get('/:id/activity', (req, res) => {
-    const activity = getProjectActivity(db, req.params.id);
-    res.json(activity);
+    const activity = getProjectActivity(db, req.params.id) as {
+      id: string;
+      type: string;
+      payload: string | null;
+      created_at: string;
+      username: string | null;
+    }[];
+
+    res.json(activity.map((entry) => {
+      let details: string | undefined;
+      if (entry.payload) {
+        try {
+          const parsed = JSON.parse(entry.payload) as Record<string, unknown>;
+          details = (parsed.details ?? parsed.description ?? parsed.title) as string | undefined;
+        } catch {
+          details = entry.payload;
+        }
+      }
+
+      return {
+        id: entry.id,
+        action: entry.type,
+        details,
+        created_at: entry.created_at,
+        user: entry.username ? { username: entry.username } : undefined,
+      };
+    }));
   });
 
   // POST /:id/notify-pa — notify PA user with a follow_up notification

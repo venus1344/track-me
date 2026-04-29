@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
+import Calendar from './pages/Calendar';
 import ProjectDetail from './pages/ProjectDetail';
 import Customers from './pages/Customers';
 import Notifications from './pages/Notifications';
@@ -31,14 +32,15 @@ function ProtectedRoutes() {
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   return (
-    <Layout>
-      <Routes>
-        <Route index element={<Dashboard />} />
-        <Route path="board" element={<Board />} />
-        <Route path="projects/:id" element={<ProjectDetail />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="notifications" element={<Notifications />} />
-      </Routes>
+        <Layout>
+          <Routes>
+            <Route index element={<Dashboard />} />
+            <Route path="board" element={<Board />} />
+            <Route path="calendar" element={<Calendar />} />
+            <Route path="projects/:id" element={<ProjectDetail />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="notifications" element={<Notifications />} />
+          </Routes>
     </Layout>
   );
 }

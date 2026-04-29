@@ -40,6 +40,10 @@ describe('Blockers routes', () => {
     expect(res.body).toMatchObject({ description: 'Waiting on client approval', resolved: 0 });
     expect(res.body.task_id).toBeNull();
     expect(res.body.project_id).toBe(projectId);
+
+    const projectRes = await agent.get(`/api/projects/${projectId}`);
+    expect(projectRes.status).toBe(200);
+    expect(projectRes.body.stage).toBe('blocked');
   });
 
   it('creates a task-level blocker', async () => {
@@ -49,6 +53,10 @@ describe('Blockers routes', () => {
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ description: 'Missing design assets', task_id: taskId });
     expect(res.body.resolved).toBe(0);
+
+    const taskRes = await agent.get(`/api/projects/${projectId}/tasks/${taskId}`);
+    expect(taskRes.status).toBe(200);
+    expect(taskRes.body.stage).toBe('blocked');
   });
 
   it('rejects creation without description', async () => {
@@ -57,14 +65,16 @@ describe('Blockers routes', () => {
     expect(res.body).toHaveProperty('error');
   });
 
-  it('lists all blockers for a project', async () => {
+  it('lists only project-level blockers by default', async () => {
     await agent.post(`/api/projects/${projectId}/blockers`).send({ description: 'Blocker A' });
     await agent.post(`/api/projects/${projectId}/blockers`).send({ description: 'Blocker B', task_id: taskId });
 
     const res = await agent.get(`/api/projects/${projectId}/blockers`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBe(2);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].task_id).toBeNull();
+    expect(res.body[0].description).toBe('Blocker A');
   });
 
   it('filters blockers by taskId', async () => {
@@ -83,10 +93,15 @@ describe('Blockers routes', () => {
       .send({ description: 'Unblocked soon' });
     const blockerId = createRes.body.id;
 
-    const res = await agent.put(`/api/projects/${projectId}/blockers/${blockerId}`).send({ resolved: 1 });
+    const res = await agent.put(`/api/projects/${projectId}/blockers/${blockerId}`).send({
+      resolved: 1,
+      resolution_note: 'Client approved the missing dependency.',
+    });
     expect(res.status).toBe(200);
     expect(res.body.resolved).toBe(1);
     expect(res.body.resolved_at).not.toBeNull();
+    expect(res.body.resolution_note).toBe('Client approved the missing dependency.');
+    expect(res.body.resolved_by_user_id).toBeTruthy();
   });
 
   it('unresolves a previously resolved blocker', async () => {
@@ -95,11 +110,27 @@ describe('Blockers routes', () => {
       .send({ description: 'Already resolved' });
     const blockerId = createRes.body.id;
 
-    await agent.put(`/api/projects/${projectId}/blockers/${blockerId}`).send({ resolved: 1 });
+    await agent.put(`/api/projects/${projectId}/blockers/${blockerId}`).send({
+      resolved: 1,
+      resolution_note: 'Temporary fix applied.',
+    });
     const res = await agent.put(`/api/projects/${projectId}/blockers/${blockerId}`).send({ resolved: 0 });
     expect(res.status).toBe(200);
     expect(res.body.resolved).toBe(0);
     expect(res.body.resolved_at).toBeNull();
+    expect(res.body.resolution_note).toBeNull();
+    expect(res.body.resolved_by_user_id).toBeNull();
+  });
+
+  it('rejects resolving a blocker without a resolution note', async () => {
+    const createRes = await agent
+      .post(`/api/projects/${projectId}/blockers`)
+      .send({ description: 'Needs explanation' });
+    const blockerId = createRes.body.id;
+
+    const res = await agent.put(`/api/projects/${projectId}/blockers/${blockerId}`).send({ resolved: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('resolution_note');
   });
 
   it('deletes a blocker', async () => {

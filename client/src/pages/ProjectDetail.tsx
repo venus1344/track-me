@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DragDropContext, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -43,6 +43,7 @@ interface Project {
   id: string;
   title: string;
   stage: string;
+  start_date?: string;
   due_date?: string;
   share_token?: string;
   customer?: Customer;
@@ -55,19 +56,19 @@ interface Project {
 }
 
 const PROJECT_STAGES = [
-  { key: 'scoping',    label: 'Scoping',     color: '#8b5cf6' },
-  { key: 'quoted',     label: 'Quoted',      color: '#f59e0b' },
+  { key: 'scoping', label: 'Scoping', color: '#8b5cf6' },
+  { key: 'quoted', label: 'Quoted', color: '#f59e0b' },
   { key: 'inprogress', label: 'In Progress', color: '#3b82f6' },
-  { key: 'review',     label: 'Review',      color: '#14b8a6' },
-  { key: 'blocked',    label: 'Blocked',     color: '#f87171' },
-  { key: 'done',       label: 'Done',        color: '#34d399' },
+  { key: 'review', label: 'Review', color: '#14b8a6' },
+  { key: 'blocked', label: 'Blocked', color: '#f87171' },
+  { key: 'done', label: 'Done', color: '#34d399' },
 ];
 
 const TASK_STAGES = [
-  { key: 'todo',       label: 'To Do',       color: '#8b5cf6' },
+  { key: 'todo', label: 'To Do', color: '#8b5cf6' },
   { key: 'inprogress', label: 'In Progress', color: '#3b82f6' },
-  { key: 'blocked',    label: 'Blocked',     color: '#f87171' },
-  { key: 'done',       label: 'Done',        color: '#34d399' },
+  { key: 'blocked', label: 'Blocked', color: '#f87171' },
+  { key: 'done', label: 'Done', color: '#34d399' },
 ];
 
 function isOverdue(dueDate?: string) {
@@ -76,11 +77,34 @@ function isOverdue(dueDate?: string) {
 }
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatDateTime(date: string) {
   return new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatTimeline(startDate?: string, dueDate?: string) {
+  if (startDate && dueDate) {
+    if (startDate === dueDate) return formatDate(dueDate);
+    return `${formatDate(startDate)} - ${formatDate(dueDate)}`;
+  }
+  if (startDate) return `Starts ${formatDate(startDate)}`;
+  if (dueDate) return `Due ${formatDate(dueDate)}`;
+  return 'No dates set';
+}
+
+function formatActivityAction(action: string) {
+  switch (action) {
+    case 'blocker_added':
+      return 'added a blocker';
+    case 'blocker_resolved':
+      return 'resolved a blocker';
+    case 'blocker_reopened':
+      return 'reopened a blocker';
+    default:
+      return action.replace(/_/g, ' ');
+  }
 }
 
 // ── Task Modal Overlay ─────────────────────────────────────────────────────────
@@ -314,6 +338,7 @@ export default function ProjectDetail() {
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [newTaskText, setNewTaskText] = useState<Record<string, string>>({});
+  const [timelineForm, setTimelineForm] = useState({ start_date: '', due_date: '' });
 
   const { data: project, isLoading, error } = useQuery<Project>({
     queryKey: ['project', projectId],
@@ -327,9 +352,16 @@ export default function ProjectDetail() {
     enabled: !!projectId,
   });
 
+  const { data: activity = [] } = useQuery<ActivityEntry[]>({
+    queryKey: ['project-activity', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/activity`),
+    enabled: !!projectId,
+  });
+
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['project', projectId] });
     void qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+    void qc.invalidateQueries({ queryKey: ['project-activity', projectId] });
     void qc.invalidateQueries({ queryKey: ['projects'] });
   };
 
@@ -354,6 +386,14 @@ export default function ProjectDetail() {
     onSuccess: invalidate,
   });
 
+  const timelineMutation = useMutation({
+    mutationFn: () => api.put(`/projects/${projectId}`, {
+      start_date: timelineForm.start_date || null,
+      due_date: timelineForm.due_date || null,
+    }),
+    onSuccess: invalidate,
+  });
+
   const notifyMutation = useMutation({
     mutationFn: () => api.post(`/projects/${projectId}/notify-pa`),
   });
@@ -366,6 +406,13 @@ export default function ProjectDetail() {
       invalidate();
     },
   });
+
+  useEffect(() => {
+    setTimelineForm({
+      start_date: project?.start_date ?? '',
+      due_date: project?.due_date ?? '',
+    });
+  }, [project?.start_date, project?.due_date]);
 
 
   function handleAddTask(stage: string) {
@@ -417,6 +464,7 @@ export default function ProjectDetail() {
 
   const overdue = isOverdue(project.due_date);
   const currentStage = PROJECT_STAGES.find((s) => s.key === project.stage);
+  const timelineInvalid = Boolean(timelineForm.start_date && timelineForm.due_date && timelineForm.start_date > timelineForm.due_date);
 
   return (
     <div className="p-6">
@@ -426,7 +474,7 @@ export default function ProjectDetail() {
           ← Board
         </button>
         <span>/</span>
-        <span style={{ color: 'var(--text3)' }}>PRJ-{project.id}</span>
+        <span style={{ color: 'var(--text3)' }}>{project.title}</span>
       </div>
 
       {/* Project header */}
@@ -436,7 +484,7 @@ export default function ProjectDetail() {
       >
         <div className="flex flex-wrap items-start gap-4 mb-4">
           <div className="flex-1 min-w-0">
-            <span className="text-xs font-mono" style={{ color: 'var(--text3)' }}>PRJ-{project.id}</span>
+            {/* <span className="text-xs font-mono" style={{ color: 'var(--text3)' }}>PRJ-{project.id}</span> */}
             <h1 className="text-2xl font-bold mt-1" style={{ color: 'var(--text)' }}>{project.title}</h1>
           </div>
 
@@ -482,9 +530,9 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Due date */}
-        {project.due_date && (
-          <div className="mb-4">
+        {/* Timeline */}
+        <div className="mb-4">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
             <span
               className="text-xs px-3 py-1 rounded-full"
               style={{
@@ -492,11 +540,56 @@ export default function ProjectDetail() {
                 color: overdue ? 'var(--danger)' : 'var(--text2)',
               }}
             >
-              {overdue ? '⚠ Overdue — ' : 'Due '}
-              {formatDate(project.due_date)}
+              {overdue ? '⚠ ' : ''}{formatTimeline(project.start_date, project.due_date)}
             </span>
           </div>
-        )}
+
+          <div
+            className="rounded-xl p-4 flex flex-wrap items-end gap-3"
+            style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold" style={{ color: 'var(--text2)' }}>Start date</label>
+              <input
+                type="date"
+                value={timelineForm.start_date}
+                onChange={(e) => setTimelineForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                className="px-3 py-2 rounded-lg text-sm outline-none"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold" style={{ color: 'var(--text2)' }}>Due date</label>
+              <input
+                type="date"
+                value={timelineForm.due_date}
+                onChange={(e) => setTimelineForm((prev) => ({ ...prev, due_date: e.target.value }))}
+                className="px-3 py-2 rounded-lg text-sm outline-none"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+              />
+            </div>
+            <button
+              onClick={() => timelineMutation.mutate()}
+              disabled={timelineInvalid || timelineMutation.isPending}
+              className="px-4 py-2 rounded-lg text-sm font-semibold"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+              {timelineMutation.isPending ? 'Saving…' : 'Save Timeline'}
+            </button>
+            <button
+              onClick={() => setTimelineForm({ start_date: '', due_date: '' })}
+              className="px-3 py-2 rounded-lg text-sm"
+              style={{ background: 'var(--surface3)', color: 'var(--text2)' }}
+            >
+              Clear
+            </button>
+            {timelineInvalid && (
+              <p className="basis-full text-xs" style={{ color: 'var(--danger)' }}>
+                Start date must be on or before due date.
+              </p>
+            )}
+          </div>
+        </div>
 
         {/* Stage selector */}
         <div className="mb-4">
@@ -609,11 +702,11 @@ export default function ProjectDetail() {
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
       >
         <h3 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>Activity</h3>
-        {(project.activity ?? []).length === 0 ? (
+        {activity.length === 0 ? (
           <p className="text-sm" style={{ color: 'var(--text3)' }}>No activity yet</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {(project.activity ?? []).map((a) => (
+            {activity.map((a) => (
               <div key={a.id} className="flex items-start gap-3 text-sm">
                 <div
                   className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
@@ -623,7 +716,7 @@ export default function ProjectDetail() {
                 </div>
                 <div className="flex-1">
                   <span style={{ color: 'var(--text)' }}>
-                    <strong>{a.user?.username ?? 'System'}</strong> {a.action}
+                    <strong>{a.user?.username ?? 'System'}</strong> {formatActivityAction(a.action)}
                   </span>
                   {a.details && (
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text2)' }}>{a.details}</p>

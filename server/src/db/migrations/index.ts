@@ -1,20 +1,13 @@
 import Database from 'better-sqlite3';
-
-type Migration = {
-  name: string;
-  run: (db: Database.Database) => void;
-};
+import { addTaskIdToAttachments } from './001-add-task-id-to-attachments.js';
+import { addStartDateToProjects } from './002-add-start-date-to-projects.js';
+import { addResolutionFieldsToBlockers } from './003-add-resolution-fields-to-blockers.js';
+import type { Migration } from './types.js';
 
 const migrations: Migration[] = [
-  {
-    name: 'add_task_id_to_attachments',
-    run(db) {
-      const cols = (db.pragma('table_info(attachments)') as { name: string }[]).map((c) => c.name);
-      if (!cols.includes('task_id')) {
-        db.exec('ALTER TABLE attachments ADD COLUMN task_id TEXT REFERENCES tasks(id)');
-      }
-    },
-  },
+  addTaskIdToAttachments,
+  addStartDateToProjects,
+  addResolutionFieldsToBlockers,
 ];
 
 export function runMigrations(db: Database.Database): void {

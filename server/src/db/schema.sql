@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS projects (
   title TEXT NOT NULL,
   description TEXT,
   stage TEXT NOT NULL DEFAULT 'scoping' CHECK (stage IN ('scoping','quoted','inprogress','review','blocked','done')),
+  start_date TEXT,
   due_date TEXT,
   share_token TEXT UNIQUE,
   archived INTEGER NOT NULL DEFAULT 0,
@@ -45,8 +46,10 @@ CREATE TABLE IF NOT EXISTS blockers (
   task_id TEXT REFERENCES tasks(id),
   description TEXT NOT NULL,
   resolved INTEGER NOT NULL DEFAULT 0,
+  resolution_note TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  resolved_at TEXT
+  resolved_at TEXT,
+  resolved_by_user_id TEXT REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS attachments (

@@ -4,6 +4,7 @@ interface Project {
   id: string;
   title: string;
   stage: string;
+  start_date?: string;
   due_date?: string;
   customer_name?: string;
   customer_color?: string;
@@ -23,10 +24,20 @@ function isOverdue(dueDate?: string) {
 }
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', {
+  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function formatTimeline(startDate?: string, dueDate?: string) {
+  if (startDate && dueDate) {
+    if (startDate === dueDate) return `Due ${formatDate(dueDate)}`;
+    return `${formatDate(startDate)} - ${formatDate(dueDate)}`;
+  }
+  if (startDate) return `Starts ${formatDate(startDate)}`;
+  if (dueDate) return `Due ${formatDate(dueDate)}`;
+  return null;
 }
 
 interface ProgressRingProps {
@@ -75,6 +86,7 @@ export default function ProjectCard({ project }: { project: Project }) {
   const overdue = isOverdue(project.due_date);
   const hasBlockers = (project.active_blockers ?? project.blocker_count ?? 0) > 0;
   const blockerCount = project.active_blockers ?? project.blocker_count ?? 0;
+  const timeline = formatTimeline(project.start_date, project.due_date);
 
   return (
     <div
@@ -87,9 +99,6 @@ export default function ProjectCard({ project }: { project: Project }) {
     >
       {/* ID + customer */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-mono" style={{ color: 'var(--text3)' }}>
-          PRJ-{project.id}
-        </span>
         {project.customer_name && (
           <span
             className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -109,7 +118,7 @@ export default function ProjectCard({ project }: { project: Project }) {
       </p>
 
       {/* Due date */}
-      {project.due_date && (
+      {timeline && (
         <div className="mb-3">
           <span
             className="text-xs px-2 py-0.5 rounded-full"
@@ -118,7 +127,7 @@ export default function ProjectCard({ project }: { project: Project }) {
               color: overdue ? 'var(--danger)' : 'var(--text2)',
             }}
           >
-            {overdue ? '⚠ ' : ''}Due {formatDate(project.due_date)}
+            {overdue ? '⚠ ' : ''}{timeline}
           </span>
         </div>
       )}

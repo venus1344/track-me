@@ -5,6 +5,7 @@ interface ProjectRow {
   id: string;
   title: string;
   stage: string;
+  start_date: string | null;
   due_date: string | null;
   archived: number;
   customer_name: string;
@@ -29,6 +30,7 @@ export function shareRoutes(db: Database.Database): Router {
         p.id,
         p.title,
         p.stage,
+        p.start_date,
         p.due_date,
         p.archived,
         c.name AS customer_name
@@ -59,6 +61,7 @@ export function shareRoutes(db: Database.Database): Router {
       id: project.id,
       title: project.title,
       stage: project.stage,
+      start_date: project.start_date,
       due_date: project.due_date,
       customer_name: project.customer_name,
       tasks,

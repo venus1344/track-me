@@ -11,8 +11,9 @@ interface SharedProject {
   id: number;
   title: string;
   stage: string;
+  start_date?: string;
   due_date?: string;
-  customer?: { name: string };
+  customer_name?: string;
   tasks?: Task[];
   tasks_done?: number;
   tasks_total?: number;
@@ -35,11 +36,21 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', {
+  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function formatTimeline(startDate?: string, dueDate?: string) {
+  if (startDate && dueDate) {
+    if (startDate === dueDate) return formatDate(dueDate);
+    return `${formatDate(startDate)} - ${formatDate(dueDate)}`;
+  }
+  if (startDate) return `Starts ${formatDate(startDate)}`;
+  if (dueDate) return `Due ${formatDate(dueDate)}`;
+  return null;
 }
 
 function ShareContent() {
@@ -90,6 +101,7 @@ function ShareContent() {
 
   const done = project.tasks_done ?? tasks.filter((t) => t.stage === 'done').length;
   const total = project.tasks_total ?? tasks.length;
+  const timeline = formatTimeline(project.start_date, project.due_date);
 
   return (
     <div className="min-h-screen p-6" style={{ background: 'var(--bg)' }}>
@@ -115,12 +127,12 @@ function ShareContent() {
         </h1>
 
         <div className="flex flex-wrap gap-3 items-center">
-          {project.customer && (
+          {project.customer_name && (
             <span
               className="text-sm px-3 py-1 rounded-full"
               style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
             >
-              {project.customer.name}
+              {project.customer_name}
             </span>
           )}
 
@@ -131,12 +143,12 @@ function ShareContent() {
             {STAGE_LABELS[project.stage] ?? project.stage}
           </span>
 
-          {project.due_date && (
+          {timeline && (
             <span
               className="text-sm px-3 py-1 rounded-full"
               style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
             >
-              Due {formatDate(project.due_date)}
+              {timeline}
             </span>
           )}
 
