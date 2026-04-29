@@ -1,0 +1,44 @@
+import express from 'express';
+import session from 'express-session';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import Database from 'better-sqlite3';
+import { authRoutes } from './routes/auth.js';
+import { requireAuth } from './middleware/auth.js';
+import { customerRoutes } from './routes/customers.js';
+import { projectRoutes } from './routes/projects.js';
+import { taskRoutes } from './routes/tasks.js';
+import { blockerRoutes } from './routes/blockers.js';
+import { attachmentRoutes } from './routes/attachments.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { shareRoutes } from './routes/share.js';
+import { dashboardRoutes } from './routes/dashboard.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export { requireAuth };
+
+export function createApp(db: Database.Database, sessionSecret: string) {
+  const app = express();
+  app.use(cors({ origin: true, credentials: true }));
+  app.use(express.json());
+  app.use(session({
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 },
+  }));
+  app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+  app.get('/api/health', (_req, res) => { res.json({ status: 'ok' }); });
+  app.use('/api/auth', authRoutes(db));
+  app.use('/api/share', shareRoutes(db));
+  app.use('/api/customers', requireAuth, customerRoutes(db));
+  app.use('/api/projects', requireAuth, projectRoutes(db));
+  app.use('/api/projects/:projectId/tasks', requireAuth, taskRoutes(db));
+  app.use('/api/projects/:projectId/blockers', requireAuth, blockerRoutes(db));
+  app.use('/api/projects/:projectId/attachments', requireAuth, attachmentRoutes(db));
+  app.use('/api/notifications', requireAuth, notificationRoutes(db));
+  app.use('/api/dashboard', requireAuth, dashboardRoutes(db));
+  return app;
+}
