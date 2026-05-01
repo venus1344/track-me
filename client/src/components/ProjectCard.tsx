@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { formatDateOnlyShort, isDateOnlyPast } from '../lib/dates';
 
 interface Project {
   id: string;
@@ -18,25 +19,13 @@ function customerColor(color?: string) {
   return color ?? '#6366f1';
 }
 
-function isOverdue(dueDate?: string) {
-  if (!dueDate) return false;
-  return new Date(dueDate) < new Date();
-}
-
-function formatDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 function formatTimeline(startDate?: string, dueDate?: string) {
   if (startDate && dueDate) {
-    if (startDate === dueDate) return `Due ${formatDate(dueDate)}`;
-    return `${formatDate(startDate)} - ${formatDate(dueDate)}`;
+    if (startDate === dueDate) return `Due ${formatDateOnlyShort(dueDate)}`;
+    return `${formatDateOnlyShort(startDate)} - ${formatDateOnlyShort(dueDate)}`;
   }
-  if (startDate) return `Starts ${formatDate(startDate)}`;
-  if (dueDate) return `Due ${formatDate(dueDate)}`;
+  if (startDate) return `Starts ${formatDateOnlyShort(startDate)}`;
+  if (dueDate) return `Due ${formatDateOnlyShort(dueDate)}`;
   return null;
 }
 
@@ -83,7 +72,7 @@ export default function ProjectCard({ project }: { project: Project }) {
   const total = project.tasks_total ?? 0;
   const done = project.tasks_done ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const overdue = isOverdue(project.due_date);
+  const overdue = isDateOnlyPast(project.due_date);
   const hasBlockers = (project.active_blockers ?? project.blocker_count ?? 0) > 0;
   const blockerCount = project.active_blockers ?? project.blocker_count ?? 0;
   const timeline = formatTimeline(project.start_date, project.due_date);

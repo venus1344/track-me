@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import { formatDateOnly, getClientTimeZone } from '../lib/dates';
 
 interface Task {
   id: number;
@@ -20,36 +21,28 @@ interface SharedProject {
 }
 
 const TASK_STAGES = [
-  { key: 'todo',       label: 'To Do',       color: '#8b5cf6' },
+  { key: 'todo', label: 'To Do', color: '#8b5cf6' },
   { key: 'inprogress', label: 'In Progress', color: '#3b82f6' },
-  { key: 'blocked',    label: 'Blocked',     color: '#f87171' },
-  { key: 'done',       label: 'Done',        color: '#34d399' },
+  { key: 'blocked', label: 'Blocked', color: '#f87171' },
+  { key: 'done', label: 'Done', color: '#34d399' },
 ];
 
 const STAGE_LABELS: Record<string, string> = {
-  scoping:    'Scoping',
-  quoted:     'Quoted',
+  scoping: 'Scoping',
+  quoted: 'Quoted',
   inprogress: 'In Progress',
-  review:     'Review',
-  blocked:    'Blocked',
-  done:       'Done',
+  review: 'Review',
+  blocked: 'Blocked',
+  done: 'Done',
 };
-
-function formatDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
 
 function formatTimeline(startDate?: string, dueDate?: string) {
   if (startDate && dueDate) {
-    if (startDate === dueDate) return formatDate(dueDate);
-    return `${formatDate(startDate)} - ${formatDate(dueDate)}`;
+    if (startDate === dueDate) return formatDateOnly(dueDate, { month: 'long', day: 'numeric', year: 'numeric' });
+    return `${formatDateOnly(startDate, { month: 'long', day: 'numeric', year: 'numeric' })} - ${formatDateOnly(dueDate, { month: 'long', day: 'numeric', year: 'numeric' })}`;
   }
-  if (startDate) return `Starts ${formatDate(startDate)}`;
-  if (dueDate) return `Due ${formatDate(dueDate)}`;
+  if (startDate) return `Starts ${formatDateOnly(startDate, { month: 'long', day: 'numeric', year: 'numeric' })}`;
+  if (dueDate) return `Due ${formatDateOnly(dueDate, { month: 'long', day: 'numeric', year: 'numeric' })}`;
   return null;
 }
 
@@ -59,7 +52,9 @@ function ShareContent() {
   const { data: project, isLoading, error } = useQuery<SharedProject>({
     queryKey: ['share', token],
     queryFn: async () => {
-      const res = await fetch(`/api/share/${token}`);
+      const res = await fetch(`/api/share/${token}`, {
+        headers: { 'X-Client-Timezone': getClientTimeZone() },
+      });
       if (!res.ok) {
         if (res.status === 404) throw new Error('not_found');
         throw new Error(`HTTP ${res.status}`);
@@ -113,7 +108,7 @@ function ShareContent() {
         >
           K
         </div>
-        <span className="font-semibold" style={{ color: 'var(--text2)' }}>Kanboard</span>
+        <span className="font-semibold" style={{ color: 'var(--text2)' }}>Mooove</span>
         <span className="ml-2 text-sm" style={{ color: 'var(--text3)' }}>— Shared View</span>
       </div>
 

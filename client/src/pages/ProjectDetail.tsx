@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DragDropContext, Draggable, DropResult } from '@hello-pangea/dnd';
 import { api } from '../lib/api';
+import { formatDateOnly, formatUtcDateTime, isDateOnlyPast } from '../lib/dates';
 import KanbanColumn from '../components/KanbanColumn';
 import TaskCard from '../components/TaskCard';
 import BlockerBox from '../components/BlockerBox';
@@ -71,30 +72,17 @@ const TASK_STAGES = [
   { key: 'done', label: 'Done', color: '#34d399' },
 ];
 
-function isOverdue(dueDate?: string) {
-  if (!dueDate) return false;
-  return new Date(dueDate) < new Date();
-}
-
-function formatDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function formatDateTime(date: string) {
-  return new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
 function formatTimeline(startDate?: string, dueDate?: string) {
   if (startDate && dueDate) {
-    if (startDate === dueDate) return formatDate(dueDate);
-    return `${formatDate(startDate)} - ${formatDate(dueDate)}`;
+    if (startDate === dueDate) return formatDateOnly(dueDate);
+    return `${formatDateOnly(startDate)} - ${formatDateOnly(dueDate)}`;
   }
-  if (startDate) return `Starts ${formatDate(startDate)}`;
-  if (dueDate) return `Due ${formatDate(dueDate)}`;
+  if (startDate) return `Starts ${formatDateOnly(startDate)}`;
+  if (dueDate) return `Due ${formatDateOnly(dueDate)}`;
   return 'No dates set';
 }
 
-function formatActivityAction(action: string) {
+export function formatActivityAction(action: string) {
   switch (action) {
     case 'blocker_added':
       return 'added a blocker';
@@ -462,7 +450,7 @@ export default function ProjectDetail() {
     moveTaskMutation.mutate({ taskId: draggableId, stage: destination.droppableId });
   }
 
-  const overdue = isOverdue(project.due_date);
+  const overdue = isDateOnlyPast(project.due_date);
   const currentStage = PROJECT_STAGES.find((s) => s.key === project.stage);
   const timelineInvalid = Boolean(timelineForm.start_date && timelineForm.due_date && timelineForm.start_date > timelineForm.due_date);
 
@@ -723,7 +711,7 @@ export default function ProjectDetail() {
                   )}
                 </div>
                 <span className="text-xs shrink-0" style={{ color: 'var(--text3)' }}>
-                  {formatDateTime(a.created_at)}
+                  {formatUtcDateTime(a.created_at)}
                 </span>
               </div>
             ))}

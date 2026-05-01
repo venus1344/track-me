@@ -2,7 +2,9 @@ import { Router } from 'express';
 import Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
 import { getProjectActivity } from '../services/activity.js';
-import { createInAppNotification } from '../services/notify.js';
+import { createInAppNotification, sendSlackNotification, sendEmailNotification } from '../services/notify.js';
+import { getAllSettings, getBool } from '../services/settings.js';
+import { projectAccessFilter, canAccessProject, canModify } from '../middleware/access.js';
 
 interface ProjectRow {
   id: string;
@@ -29,6 +31,8 @@ export function projectRoutes(db: Database.Database): Router {
   router.get('/', (req, res) => {
     const { customerId, stage, archived } = req.query as Record<string, string | undefined>;
     const archivedVal = archived !== undefined ? Number(archived) : 0;
+    const userId = String(req.session.userId);
+    const role = req.session.role ?? '';
 
     const conditions: string[] = ['p.archived = ?'];
     const params: unknown[] = [archivedVal];
@@ -40,6 +44,13 @@ export function projectRoutes(db: Database.Database): Router {
     if (stage) {
       conditions.push('p.stage = ?');
       params.push(stage);
+    }
+
+    // Access filtering — non-admin only sees granted projects
+    const access = projectAccessFilter(db, userId, role);
+    if (access.clause) {
+      conditions.push(access.clause.replace(/^AND /, ''));
+      params.push(...access.params);
     }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -62,6 +73,10 @@ export function projectRoutes(db: Database.Database): Router {
 
   // GET /:id — single project with customer info
   router.get('/:id', (req, res) => {
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', req.params.id)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
     const row = db.prepare(`
       SELECT
         p.*,
@@ -113,16 +128,33 @@ export function projectRoutes(db: Database.Database): Router {
     const id = uuid();
     const share_token = uuid();
     const finalStage = stage ?? 'scoping';
+    if (!canModify(req.session.role ?? '')) {
+      res.status(403).json({ error: 'Viewers cannot create projects' });
+      return;
+    }
     db.prepare(`
       INSERT INTO projects (id, customer_id, title, description, stage, start_date, due_date, share_token)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, customer_id, title.trim(), description ?? null, finalStage, start_date ?? null, due_date ?? null, share_token);
+    // Auto-add creator as project member
+    const creatorId = String(req.session.userId);
+    db.prepare(
+      'INSERT INTO project_members (id, project_id, user_id, task_access, granted_by) VALUES (?, ?, ?, ?, ?)'
+    ).run(uuid(), id, creatorId, 'all', creatorId);
     const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
     res.status(201).json(row);
   });
 
   // PUT /:id — update project
   router.put('/:id', (req, res) => {
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', req.params.id)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
+    if (!canModify(req.session.role ?? '')) {
+      res.status(403).json({ error: 'Viewers cannot modify projects' });
+      return;
+    }
     const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as ProjectRow | undefined;
     if (!existing) {
       res.status(404).json({ error: 'Project not found' });
@@ -154,6 +186,14 @@ export function projectRoutes(db: Database.Database): Router {
 
   // DELETE /:id — delete project
   router.delete('/:id', (req, res) => {
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', req.params.id)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
+    if (!canModify(req.session.role ?? '')) {
+      res.status(403).json({ error: 'Viewers cannot delete projects' });
+      return;
+    }
     const existing = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Project not found' });
@@ -207,12 +247,34 @@ export function projectRoutes(db: Database.Database): Router {
       res.status(404).json({ error: 'No PA user found' });
       return;
     }
+
+    const message = `Follow-up needed on project "${project.title}"`;
+
     createInAppNotification(db, {
       projectId: id,
       type: 'follow_up',
-      message: `Follow-up needed on project "${project.title}"`,
+      message,
       userId: paUser.id,
     });
+
+    // Fire-and-forget — don't block the response
+    const settings = getAllSettings(db);
+    const slackWebhook = settings.slack_webhook_url || process.env.SLACK_WEBHOOK_URL || '';
+    if (getBool(settings, 'slack_enabled') && slackWebhook) {
+      void sendSlackNotification(slackWebhook, message);
+    }
+
+    const brevoKey = settings.brevo_api_key || process.env.BREVO_API_KEY || '';
+    const recipients = settings.email_recipients.split(',').map((e) => e.trim()).filter(Boolean);
+    if (brevoKey && recipients.length > 0) {
+      const senderEmail = settings.email_sender_address || 'noreply@kanboard.app';
+      const senderName = settings.email_sender_name || 'Mooove';
+      const html = `<h1>Follow-up Needed</h1><p>${message}</p>`;
+      for (const to of recipients) {
+        void sendEmailNotification(brevoKey, to, `Follow-up: ${project.title}`, html, senderEmail, senderName);
+      }
+    }
+
     res.json({ success: true });
   });
 

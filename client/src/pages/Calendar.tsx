@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { formatDateOnlyShort } from '../lib/dates';
 
 interface Project {
   id: string;
@@ -28,13 +29,6 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function parseLocalDate(date: string) {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(year, month - 1, day);
-}
-
-function formatDate(date: string) {
-  return parseLocalDate(date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 function monthLabel(date: Date) {
@@ -79,11 +73,11 @@ function projectOverlapsMonth(project: Project, monthStart: string, monthEnd: st
 
 function formatTimeline(project: Project) {
   if (project.start_date && project.due_date) {
-    if (project.start_date === project.due_date) return formatDate(project.due_date);
-    return `${formatDate(project.start_date)} - ${formatDate(project.due_date)}`;
+    if (project.start_date === project.due_date) return formatDateOnlyShort(project.due_date);
+    return `${formatDateOnlyShort(project.start_date)} - ${formatDateOnlyShort(project.due_date)}`;
   }
-  if (project.start_date) return `Starts ${formatDate(project.start_date)}`;
-  if (project.due_date) return `Due ${formatDate(project.due_date)}`;
+  if (project.start_date) return `Starts ${formatDateOnlyShort(project.start_date)}`;
+  if (project.due_date) return `Due ${formatDateOnlyShort(project.due_date)}`;
   return 'No schedule';
 }
 

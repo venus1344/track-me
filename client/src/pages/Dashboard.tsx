@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { formatDateOnlyShort, formatUtcDateTime } from '../lib/dates';
+import { formatActivityAction } from '../pages/ProjectDetail';
 
 interface StatCard {
   label: string;
@@ -40,14 +42,6 @@ interface DashboardData {
   active_blockers: BlockerItem[];
   due_soon: DueSoon[];
   recent_activity: ActivityItem[];
-}
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function formatDateTime(date: string) {
-  return new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 export default function Dashboard() {
@@ -166,7 +160,7 @@ export default function Dashboard() {
                     className="text-xs px-2 py-0.5 rounded-full shrink-0"
                     style={{ background: 'var(--surface3)', color: '#f59e0b' }}
                   >
-                    {formatDate(p.due_date)}
+                    {formatDateOnlyShort(p.due_date)}
                   </span>
                 </div>
               ))}
@@ -197,7 +191,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <span style={{ color: 'var(--text)' }}>
-                    <strong>{a.user?.username ?? 'System'}</strong> {a.action}
+                    <strong>{a.user?.username ?? 'System'}</strong> {formatActivityAction(a.action)}
                   </span>
                   {a.project && (
                     <button
@@ -215,7 +209,7 @@ export default function Dashboard() {
                   )}
                 </div>
                 <span className="text-xs shrink-0" style={{ color: 'var(--text3)' }}>
-                  {formatDateTime(a.created_at)}
+                  {formatUtcDateTime(a.created_at)}
                 </span>
               </div>
             ))}

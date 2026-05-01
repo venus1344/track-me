@@ -11,6 +11,7 @@ import ProjectDetail from './pages/ProjectDetail';
 import Customers from './pages/Customers';
 import Notifications from './pages/Notifications';
 import Share from './pages/Share';
+import Settings from './pages/Settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,7 @@ function ProtectedRoutes() {
             <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="customers" element={<Customers />} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="settings" element={<Settings />} />
           </Routes>
     </Layout>
   );

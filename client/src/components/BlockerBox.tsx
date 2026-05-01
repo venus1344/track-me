@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { formatUtcDateTime } from '../lib/dates';
 
 interface Blocker {
   id: string;
@@ -74,16 +75,6 @@ export default function BlockerBox({ projectId, blockers: initialBlockers, taskI
 
   const active = (blockers ?? []).filter((b) => !b.resolved);
   const resolved = (blockers ?? []).filter((b) => b.resolved);
-
-  function formatDateTime(value?: string | null) {
-    if (!value) return null;
-    return new Date(value).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  }
 
   return (
     <div
@@ -233,7 +224,7 @@ export default function BlockerBox({ projectId, blockers: initialBlockers, taskI
                 )}
                 <p className="text-xs mt-1" style={{ color: 'var(--text3)' }}>
                   {[
-                    formatDateTime(b.resolved_at),
+                    b.resolved_at ? formatUtcDateTime(b.resolved_at) : null,
                     b.resolved_by_username ? `by ${b.resolved_by_username}` : null,
                   ].filter(Boolean).join(' ')}
                 </p>

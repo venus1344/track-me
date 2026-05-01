@@ -5,5 +5,7 @@ declare module 'express-session' {
     userId: number;
     username: string;
     role: string;
+    email: string | null;
+    displayName: string | null;
   }
 }
