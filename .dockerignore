@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.gitignore
+.DS_Store
+.env
+.env.local
+uploads
+*.db
+*.db-shm
+*.db-wal
+.claude
+docs
+README.md

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  kanban:
+    image: kanban:latest
+    container_name: kanban-app
+    restart: always
+    env_file: .env.production
+    volumes:
+      - kanban-data:/app/data
+    networks:
+      - ghost_network
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  kanban-data:
+    driver: local
+
+networks:
+  ghost_network:
+    external: true
