@@ -1,3 +1,5 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express, { Request, Response, NextFunction } from 'express';
 import session from 'express-session';
 import cors from 'cors';
@@ -76,6 +78,17 @@ export function createApp(db: Database.Database, sessionSecret: string) {
   app.use('/api/projects/:projectId/members', requireAuth, projectMemberRoutes(db));
   app.use('/api/settings', requireAuth, settingsRoutes(db));
   app.use('/api/dashboard', requireAuth, dashboardRoutes(db));
+
+  // Serve static frontend files and SPA fallback (production)
+  if (process.env.NODE_ENV === 'production') {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const clientDist = path.resolve(__dirname, '../../client/dist');
+    app.use(express.static(clientDist));
+    // SPA fallback — serve index.html for all non-API routes
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(clientDist, 'index.html'));
+    });
+  }
 
   // Global error handler — suppress stack traces in production
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
