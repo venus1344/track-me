@@ -4,4 +4,5 @@ export type Migration = {
   name: string;
   up: (db: Database.Database) => void;
   down: (db: Database.Database) => void;
+  disableForeignKeys?: boolean;
 };

@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'viewer'];
+const MIN_PASSWORD_LENGTH = parseInt(process.env.MIN_PASSWORD_LENGTH ?? '12', 10);
 
 export function userRoutes(db: Database.Database): Router {
   const router = Router();
@@ -51,8 +52,8 @@ export function userRoutes(db: Database.Database): Router {
       res.status(400).json({ error: 'username is required' });
       return;
     }
-    if (!password || password.length < 6) {
-      res.status(400).json({ error: 'password must be at least 6 characters' });
+    if (!password || password.length < MIN_PASSWORD_LENGTH) {
+      res.status(400).json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` });
       return;
     }
     if (role && !VALID_ROLES.includes(role)) {
@@ -141,8 +142,8 @@ export function userRoutes(db: Database.Database): Router {
       return;
     }
     const { password } = req.body as { password?: string };
-    if (!password || password.length < 6) {
-      res.status(400).json({ error: 'password must be at least 6 characters' });
+    if (!password || password.length < MIN_PASSWORD_LENGTH) {
+      res.status(400).json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` });
       return;
     }
     const passwordHash = await bcrypt.hash(password, 10);

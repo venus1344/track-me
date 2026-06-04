@@ -16,15 +16,33 @@ interface ProjectRow {
   due_date: string | null;
   share_token: string | null;
   archived: number;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
+
+const MAX_TITLE = 255;
+const MAX_DESCRIPTION = 10000;
+const VALID_PROJECT_STAGES = ['scoping', 'quoted', 'inprogress', 'review', 'blocked', 'done'];
 
 export function projectRoutes(db: Database.Database): Router {
   const router = Router();
 
   function hasInvalidTimeline(startDate?: string | null, dueDate?: string | null) {
     return Boolean(startDate && dueDate && startDate > dueDate);
+  }
+
+  function validateProjectInput(title?: string, description?: string | null, stage?: string) {
+    if (title && title.length > MAX_TITLE) {
+      return `Title must be ≤ ${MAX_TITLE} characters`;
+    }
+    if (description && description.length > MAX_DESCRIPTION) {
+      return `Description must be ≤ ${MAX_DESCRIPTION} characters`;
+    }
+    if (stage && !VALID_PROJECT_STAGES.includes(stage)) {
+      return `Invalid stage: ${stage}`;
+    }
+    return null;
   }
 
   // GET / — list projects with filters
@@ -34,7 +52,7 @@ export function projectRoutes(db: Database.Database): Router {
     const userId = String(req.session.userId);
     const role = req.session.role ?? '';
 
-    const conditions: string[] = ['p.archived = ?'];
+    const conditions: string[] = ['p.archived = ?', 'p.deleted_at IS NULL'];
     const params: unknown[] = [archivedVal];
 
     if (customerId) {
@@ -60,9 +78,9 @@ export function projectRoutes(db: Database.Database): Router {
         p.*,
         c.name AS customer_name,
         c.color AS customer_color,
-        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.stage = 'done') AS tasks_done,
-        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS tasks_total,
-        (SELECT COUNT(*) FROM blockers b WHERE b.project_id = p.id AND b.resolved = 0) AS active_blockers
+        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.stage = 'done' AND t.deleted_at IS NULL) AS tasks_done,
+        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.deleted_at IS NULL) AS tasks_total,
+        (SELECT COUNT(*) FROM blockers b WHERE b.project_id = p.id AND b.resolved = 0 AND b.deleted_at IS NULL) AS active_blockers
       FROM projects p
       JOIN customers c ON c.id = p.customer_id
       ${where}
@@ -85,11 +103,11 @@ export function projectRoutes(db: Database.Database): Router {
         c.phone AS customer_phone,
         c.color AS customer_color,
         c.notes AS customer_notes,
-        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.stage = 'done') AS tasks_done,
-        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS tasks_total
+        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.stage = 'done' AND t.deleted_at IS NULL) AS tasks_done,
+        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.deleted_at IS NULL) AS tasks_total
       FROM projects p
       JOIN customers c ON c.id = p.customer_id
-      WHERE p.id = ?
+      WHERE p.id = ? AND p.deleted_at IS NULL
     `).get(req.params.id);
     if (!row) {
       res.status(404).json({ error: 'Project not found' });
@@ -116,6 +134,13 @@ export function projectRoutes(db: Database.Database): Router {
       res.status(400).json({ error: 'title is required' });
       return;
     }
+
+    const validationError = validateProjectInput(title, description ?? null, stage);
+    if (validationError) {
+      res.status(400).json({ error: validationError });
+      return;
+    }
+
     if (hasInvalidTimeline(start_date, due_date)) {
       res.status(400).json({ error: 'start_date must be on or before due_date' });
       return;
@@ -164,9 +189,34 @@ export function projectRoutes(db: Database.Database): Router {
     const { title, description, stage, start_date, due_date } = req.body as Partial<ProjectRow>;
     const finalStartDate = start_date !== undefined ? start_date : existing.start_date;
     const finalDueDate = due_date !== undefined ? due_date : existing.due_date;
+    const finalStage = stage ?? existing.stage;
+    const finalTitle = title ?? existing.title;
+    const finalDescription = description !== undefined ? description : existing.description;
+
+    const validationError = validateProjectInput(finalTitle, finalDescription, finalStage);
+    if (validationError) {
+      res.status(400).json({ error: validationError });
+      return;
+    }
+
     if (hasInvalidTimeline(finalStartDate, finalDueDate)) {
       res.status(400).json({ error: 'start_date must be on or before due_date' });
       return;
+    }
+    // Check if trying to mark project as done with undone tasks
+    if (finalStage === 'done' && existing.stage !== 'done') {
+      const settings = getAllSettings(db);
+      if (getBool(settings, 'block_project_done_if_tasks_not_done')) {
+        const undoneTasks = db.prepare(`
+          SELECT COUNT(*) as count FROM tasks WHERE project_id = ? AND stage != 'done'
+        `).get(req.params.id) as { count: number };
+        if (undoneTasks.count > 0) {
+          res.status(400).json({
+            error: `Cannot mark project as done. ${undoneTasks.count} task(s) still need to be completed.`
+          });
+          return;
+        }
+      }
     }
     db.prepare(`
       UPDATE projects
@@ -175,7 +225,7 @@ export function projectRoutes(db: Database.Database): Router {
     `).run(
       title ?? existing.title,
       description !== undefined ? description : existing.description,
-      stage ?? existing.stage,
+      finalStage,
       finalStartDate,
       finalDueDate,
       req.params.id
@@ -184,7 +234,7 @@ export function projectRoutes(db: Database.Database): Router {
     res.json({ ...updated as object, _oldStage });
   });
 
-  // DELETE /:id — delete project
+  // DELETE /:id — soft-delete project
   router.delete('/:id', (req, res) => {
     if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', req.params.id)) {
       res.status(403).json({ error: 'Not authorized to access this project' });
@@ -194,12 +244,12 @@ export function projectRoutes(db: Database.Database): Router {
       res.status(403).json({ error: 'Viewers cannot delete projects' });
       return;
     }
-    const existing = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+    const existing = db.prepare('SELECT id FROM projects WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Project not found' });
       return;
     }
-    db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+    db.prepare("UPDATE projects SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
     res.json({ success: true });
   });
 
@@ -237,14 +287,19 @@ export function projectRoutes(db: Database.Database): Router {
   // POST /:id/notify-pa — notify PA user with a follow_up notification
   router.post('/:id/notify-pa', (req, res) => {
     const { id } = req.params;
-    const project = db.prepare('SELECT id, title FROM projects WHERE id = ?').get(id) as { id: string; title: string } | undefined;
+    // Add access control check
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', id)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
+    const project = db.prepare('SELECT id, title FROM projects WHERE id = ? AND deleted_at IS NULL').get(id) as { id: string; title: string } | undefined;
     if (!project) {
       res.status(404).json({ error: 'Project not found' });
       return;
     }
-    const paUser = db.prepare("SELECT id FROM users WHERE role = 'pa' LIMIT 1").get() as { id: string } | undefined;
+    const paUser = db.prepare("SELECT id FROM users WHERE role = 'manager' LIMIT 1").get() as { id: string } | undefined;
     if (!paUser) {
-      res.status(404).json({ error: 'No PA user found' });
+      res.status(404).json({ error: 'No manager user found' });
       return;
     }
 

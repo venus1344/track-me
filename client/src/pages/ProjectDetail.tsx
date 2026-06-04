@@ -1,13 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DragDropContext, Draggable, DropResult } from '@hello-pangea/dnd';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { useToast } from '../lib/toast';
 import { formatDateOnly, formatUtcDateTime, isDateOnlyPast } from '../lib/dates';
 import KanbanColumn from '../components/KanbanColumn';
 import TaskCard from '../components/TaskCard';
 import BlockerBox from '../components/BlockerBox';
 import AttachmentsSection from '../components/AttachmentsSection';
+import RichTextEditor from '../components/RichTextEditor';
+import RichTextRenderer from '../components/RichTextRenderer';
+import { useDirtyGuard } from '../lib/useDirtyGuard';
 
 interface Customer {
   id: string;
@@ -17,12 +22,25 @@ interface Customer {
   color?: string;
 }
 
+interface TaskAssigneeInfo {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+}
+
 interface Task {
   id: string;
   title: string;
   stage: string;
   description?: string;
   blocker_count?: number;
+  assignees?: TaskAssigneeInfo[];
+  assignee_user_id?: string | null;
+  assignee_username?: string | null;
+  assignee_display_name?: string | null;
+  qa_user_id?: string | null;
+  qa_username?: string | null;
+  qa_display_name?: string | null;
 }
 
 interface Blocker {
@@ -40,9 +58,26 @@ interface ActivityEntry {
   user?: { username: string };
 }
 
+interface ProjectMember {
+  id: string;
+  user_id: string;
+  task_access: string;
+  username: string;
+  display_name: string | null;
+  user_role: string;
+}
+
+interface SimpleUser {
+  id: string;
+  username: string;
+  display_name: string | null;
+  role: string;
+}
+
 interface Project {
   id: string;
   title: string;
+  description?: string;
   stage: string;
   start_date?: string;
   due_date?: string;
@@ -95,6 +130,409 @@ export function formatActivityAction(action: string) {
   }
 }
 
+// ── Avatar colors for member circles ──────────────────────────────────────────
+const AVATAR_COLORS = [
+  '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6',
+  '#8b5cf6', '#14b8a6', '#f97316', '#ef4444', '#06b6d4',
+];
+function avatarColor(userId: string) {
+  let h = 0;
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+// ── Members Dropdown (avatar cluster trigger) ────────────────────────────────
+function MembersDropdown({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [addAccess, setAddAccess] = useState('all');
+  const ref = useRef<HTMLDivElement>(null);
+
+  const canManage = user?.role === 'admin' || user?.role === 'manager';
+
+  const { data: members = [] } = useQuery<ProjectMember[]>({
+    queryKey: ['project-members', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/members`),
+    enabled: canManage,
+  });
+
+  const { data: allUsers = [] } = useQuery<SimpleUser[]>({
+    queryKey: ['users'],
+    queryFn: () => api.get('/users'),
+    enabled: canManage && user?.role === 'admin',
+  });
+
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ['project-members', projectId] });
+
+  const addMutation = useMutation({
+    mutationFn: (body: { userId: string; taskAccess: string }) =>
+      api.post(`/projects/${projectId}/members`, body),
+    onSuccess: () => { setSearch(''); invalidate(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ memberId, taskAccess }: { memberId: string; taskAccess: string }) =>
+      api.put(`/projects/${projectId}/members/${memberId}`, { taskAccess }),
+    onSuccess: invalidate,
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (memberId: string) =>
+      api.delete(`/projects/${projectId}/members/${memberId}`),
+    onSuccess: invalidate,
+  });
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  if (!canManage) return null;
+
+  const memberUserIds = new Set(members.map((m) => m.user_id));
+  const availableUsers = allUsers
+    .filter((u) => !memberUserIds.has(u.id))
+    .filter((u) => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (u.display_name ?? '').toLowerCase().includes(q) || u.username.toLowerCase().includes(q);
+    });
+
+  const MAX_SHOW = 4;
+  const visible = members.slice(0, MAX_SHOW);
+  const overflow = members.length - MAX_SHOW;
+
+  return (
+    <div className="relative" ref={ref}>
+      {/* Avatar cluster trigger */}
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center -space-x-2 cursor-pointer px-1 py-1 rounded-lg transition-colors hover:bg-[var(--surface2)]"
+        title={members.length ? `${members.length} member${members.length === 1 ? '' : 's'}` : 'Manage members'}
+      >
+        {visible.length > 0 ? (
+          <>
+            {visible.map((m) => (
+              <div
+                key={m.id}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-2 ring-[var(--surface)]"
+                style={{ background: avatarColor(m.user_id), color: '#fff' }}
+                title={m.display_name || m.username}
+              >
+                {(m.display_name ?? m.username)[0].toUpperCase()}
+              </div>
+            ))}
+            {overflow > 0 && (
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-2 ring-[var(--surface)]"
+                style={{ background: 'var(--surface3)', color: 'var(--text2)' }}
+              >
+                +{overflow}
+              </div>
+            )}
+          </>
+        ) : (
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm ring-2 ring-[var(--surface)]"
+            style={{ background: 'var(--surface3)', color: 'var(--text3)', border: '2px dashed var(--border2)' }}
+          >
+            +
+          </div>
+        )}
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-2 w-80 rounded-xl shadow-xl z-40 flex flex-col overflow-hidden"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
+        >
+          {/* Header */}
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+              Team ({members.length})
+            </p>
+            <button onClick={() => setOpen(false)} className="text-sm" style={{ color: 'var(--text3)' }}>&times;</button>
+          </div>
+
+          {/* Member list */}
+          <div className="max-h-60 overflow-y-auto px-2 pb-2">
+            {members.length === 0 && (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--text3)' }}>No members yet</p>
+            )}
+            {members.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-[var(--surface2)] transition-colors group"
+              >
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+                  style={{ background: avatarColor(m.user_id), color: '#fff' }}
+                >
+                  {(m.display_name ?? m.username)[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate leading-tight" style={{ color: 'var(--text)' }}>
+                    {m.display_name || m.username}
+                  </p>
+                  <p className="text-[11px] leading-tight" style={{ color: 'var(--text3)' }}>{m.user_role}</p>
+                </div>
+                <select
+                  value={m.task_access}
+                  onChange={(e) => updateMutation.mutate({ memberId: m.id, taskAccess: e.target.value })}
+                  className="text-[11px] px-1.5 py-0.5 rounded bg-transparent opacity-70 group-hover:opacity-100"
+                  style={{ color: 'var(--text2)', border: '1px solid var(--border)' }}
+                >
+                  <option value="all">All tasks</option>
+                  <option value="assigned">Assigned only</option>
+                </select>
+                <button
+                  onClick={() => removeMutation.mutate(m.id)}
+                  className="text-[11px] opacity-0 group-hover:opacity-100 transition-opacity px-1"
+                  style={{ color: 'var(--danger)' }}
+                  title="Remove member"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add member search */}
+          {user?.role === 'admin' && (
+            <div
+              className="px-3 py-3 flex flex-col gap-2"
+              style={{ borderTop: '1px solid var(--border)' }}
+            >
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search users to add..."
+                className="w-full text-sm px-3 py-2 rounded-lg outline-none"
+                style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                autoFocus
+              />
+              {search.trim() && availableUsers.length === 0 && (
+                <p className="text-xs px-1" style={{ color: 'var(--text3)' }}>No matching users</p>
+              )}
+              {availableUsers.slice(0, 5).map((u) => (
+                <div
+                  key={u.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--surface2)] cursor-pointer transition-colors"
+                  onClick={() => addMutation.mutate({ userId: u.id, taskAccess: addAccess })}
+                >
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                    style={{ background: avatarColor(u.id), color: '#fff' }}
+                  >
+                    {(u.display_name ?? u.username)[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: 'var(--text)' }}>{u.display_name || u.username}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text3)' }}>{u.role}</p>
+                  </div>
+                  <span className="text-[11px]" style={{ color: 'var(--accent)' }}>+ Add</span>
+                </div>
+              ))}
+              {availableUsers.length > 0 && (
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-[11px]" style={{ color: 'var(--text3)' }}>Access:</span>
+                  <select
+                    value={addAccess}
+                    onChange={(e) => setAddAccess(e.target.value)}
+                    className="text-[11px] px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border)' }}
+                  >
+                    <option value="all">All tasks</option>
+                    <option value="assigned">Assigned only</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Task Assignee (single) ───────────────────────────────────────────────────
+function TaskAssignee({ projectId, task, onUpdate }: { projectId: string; task: Task; onUpdate: () => void }) {
+  const { user } = useAuth();
+  const canManage = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'member';
+
+  const { data: members = [] } = useQuery<ProjectMember[]>({
+    queryKey: ['project-members', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/members`),
+    enabled: canManage,
+  });
+
+  const { data: publicSettings } = useQuery<Record<string, string>>({
+    queryKey: ['settings-public'],
+    queryFn: () => api.get('/settings/public'),
+  });
+
+  const qaBlocked = publicSettings?.qa_self_assign_blocked === 'true';
+
+  const setAssigneeMutation = useMutation({
+    mutationFn: (assigneeUserId: string | null) =>
+      api.put(`/projects/${projectId}/tasks/${task.id}`, { assignee_user_id: assigneeUserId }),
+    onSuccess: onUpdate,
+  });
+
+  const assigneeName = task.assignee_display_name || task.assignee_username;
+
+  // When self-QA is blocked, filter out the QA user from assignee options
+  const assigneeOptions = members.filter((m) => {
+    if (m.user_id === task.assignee_user_id) return false;
+    if (qaBlocked && task.qa_user_id && m.user_id === task.qa_user_id) return false;
+    return true;
+  });
+
+  return (
+    <div>
+      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text2)' }}>Assignee</p>
+      <div className="flex items-center gap-2">
+        {task.assignee_user_id && assigneeName ? (
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs"
+            style={{ background: 'var(--surface2)' }}
+          >
+            <div
+              className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+              style={{ background: avatarColor(task.assignee_user_id), color: '#fff' }}
+            >
+              {assigneeName[0].toUpperCase()}
+            </div>
+            <span style={{ color: 'var(--text)' }}>{assigneeName}</span>
+            {canManage && (
+              <button
+                onClick={() => setAssigneeMutation.mutate(null)}
+                className="ml-1"
+                style={{ color: 'var(--text3)' }}
+              >
+                &times;
+              </button>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs" style={{ color: 'var(--text3)' }}>Unassigned</span>
+        )}
+        {canManage && (
+          <select
+            value={task.assignee_user_id ?? ''}
+            onChange={(e) => setAssigneeMutation.mutate(e.target.value || null)}
+            className="text-xs px-2 py-1.5 rounded-lg"
+            style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          >
+            <option value="">
+              {task.assignee_user_id ? 'Change...' : 'Assign...'}
+            </option>
+            {assigneeOptions.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {m.display_name || m.username}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── QA Assignee ──────────────────────────────────────────────────────────────
+function QaAssignee({ projectId, task, onUpdate }: { projectId: string; task: Task; onUpdate: () => void }) {
+  const { user } = useAuth();
+  const canManage = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'member';
+
+  const { data: members = [] } = useQuery<ProjectMember[]>({
+    queryKey: ['project-members', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/members`),
+    enabled: canManage,
+  });
+
+  const { data: publicSettings } = useQuery<Record<string, string>>({
+    queryKey: ['settings-public'],
+    queryFn: () => api.get('/settings/public'),
+  });
+
+  const qaBlocked = publicSettings?.qa_self_assign_blocked === 'true';
+
+  const setQaMutation = useMutation({
+    mutationFn: (qaUserId: string | null) =>
+      api.put(`/projects/${projectId}/tasks/${task.id}`, { qa_user_id: qaUserId }),
+    onSuccess: onUpdate,
+  });
+
+  const qaName = task.qa_display_name || task.qa_username;
+
+  // When self-QA is blocked, filter out the task's assignee from QA options
+  const assigneeId = task.assignees?.[0]?.user_id;
+  const qaOptions = members.filter((m) => {
+    if (m.user_id === task.qa_user_id) return false;
+    if (qaBlocked && assigneeId && m.user_id === assigneeId) return false;
+    return true;
+  });
+
+  return (
+    <div>
+      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text2)' }}>QA Assignee</p>
+      <div className="flex items-center gap-2">
+        {task.qa_user_id && qaName ? (
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs"
+            style={{ background: 'var(--surface2)' }}
+          >
+            <div
+              className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+              style={{ background: avatarColor(task.qa_user_id), color: '#fff' }}
+            >
+              {qaName[0].toUpperCase()}
+            </div>
+            <span style={{ color: 'var(--text)' }}>{qaName}</span>
+            {canManage && (
+              <button
+                onClick={() => setQaMutation.mutate(null)}
+                className="ml-1"
+                style={{ color: 'var(--text3)' }}
+              >
+                &times;
+              </button>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs" style={{ color: 'var(--text3)' }}>None</span>
+        )}
+        {canManage && (
+          <select
+            value={task.qa_user_id ?? ''}
+            onChange={(e) => setQaMutation.mutate(e.target.value || null)}
+            className="text-xs px-2 py-1.5 rounded-lg"
+            style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          >
+            <option value="">
+              {task.qa_user_id ? 'Change QA...' : 'Set QA...'}
+            </option>
+            {qaOptions.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {m.display_name || m.username}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Task Modal Overlay ─────────────────────────────────────────────────────────
 function TaskModalOverlay({
   task,
@@ -110,7 +548,45 @@ function TaskModalOverlay({
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(task.title);
   const [editDesc, setEditDesc] = useState(task.description ?? '');
+  const [originalDesc, setOriginalDesc] = useState(task.description ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  const isDirty = editing && editDesc !== originalDesc;
+  useDirtyGuard(isDirty);
+
+  function handleCancelEdit() {
+    if (isDirty) {
+      setConfirmDiscard(true);
+    } else {
+      setEditing(false);
+      setEditTitle(task.title);
+      setEditDesc(task.description ?? '');
+    }
+  }
+
+  function handleClose() {
+    if (isDirty) {
+      setConfirmDiscard(true);
+    } else {
+      onClose();
+    }
+  }
+
+  function confirmDiscardAndClose() {
+    setEditing(false);
+    setEditTitle(task.title);
+    setEditDesc(task.description ?? '');
+    setConfirmDiscard(false);
+    onClose();
+  }
+
+  function confirmDiscardEdit() {
+    setEditing(false);
+    setEditTitle(task.title);
+    setEditDesc(task.description ?? '');
+    setConfirmDiscard(false);
+  }
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['project', projectId] });
@@ -155,7 +631,7 @@ function TaskModalOverlay({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.6)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
       <div
         className="w-full max-w-lg rounded-2xl p-6 flex flex-col gap-5"
@@ -181,24 +657,25 @@ function TaskModalOverlay({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {!editing && (
+            {!editing && !confirmDiscard && (
               <button
-                onClick={() => { setEditing(true); setConfirmDelete(false); }}
+                onClick={() => { setEditing(true); setOriginalDesc(task.description ?? ''); setConfirmDelete(false); setConfirmDiscard(false); }}
                 className="text-xs px-2 py-1 rounded-lg"
                 style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
               >
                 Edit
               </button>
             )}
-            {!confirmDelete ? (
-              <button
-                onClick={() => { setConfirmDelete(true); setEditing(false); }}
-                className="text-xs px-2 py-1 rounded-lg"
-                style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}
-              >
-                Delete
-              </button>
-            ) : (
+            {!confirmDiscard && (
+              !confirmDelete ? (
+                <button
+                  onClick={() => { setConfirmDelete(true); setEditing(false); }}
+                  className="text-xs px-2 py-1 rounded-lg"
+                  style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}
+                >
+                  Delete
+                </button>
+              ) : (
               <div className="flex items-center gap-1">
                 <span className="text-xs" style={{ color: 'var(--text2)' }}>Sure?</span>
                 <button
@@ -217,23 +694,46 @@ function TaskModalOverlay({
                   No
                 </button>
               </div>
-            )}
-            <button onClick={onClose} className="text-lg" style={{ color: 'var(--text3)' }}>✕</button>
+            ))}
+            <button onClick={handleClose} className="text-lg" style={{ color: 'var(--text3)' }}>✕</button>
           </div>
         </div>
 
+        {/* Discard confirmation */}
+        {confirmDiscard && (
+          <div
+            className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)' }}
+          >
+            <span className="text-xs font-medium" style={{ color: 'var(--danger)' }}>
+              You have unsaved changes. Discard them?
+            </span>
+            <button
+              onClick={() => (editing ? confirmDiscardEdit() : confirmDiscardAndClose())}
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+              style={{ background: 'var(--danger)', color: '#fff' }}
+            >
+              Discard
+            </button>
+            <button
+              onClick={() => setConfirmDiscard(false)}
+              className="text-xs px-3 py-1.5 rounded-lg"
+              style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
+            >
+              Keep Editing
+            </button>
+          </div>
+        )}
+
         {/* Edit form */}
-        {editing && (
+        {editing && !confirmDiscard && (
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold" style={{ color: 'var(--text2)' }}>Description</label>
-              <textarea
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                rows={3}
+              <RichTextEditor
+                content={editDesc}
+                onChange={setEditDesc}
                 placeholder="Add a description…"
-                className="px-3 py-2 rounded-lg text-sm outline-none resize-none"
-                style={inputStyle}
               />
             </div>
             <div className="flex gap-2">
@@ -246,7 +746,7 @@ function TaskModalOverlay({
                 {updateMutation.isPending ? 'Saving…' : 'Save'}
               </button>
               <button
-                onClick={() => { setEditing(false); setEditTitle(task.title); setEditDesc(task.description ?? ''); }}
+                onClick={handleCancelEdit}
                 className="px-4 py-2 rounded-lg text-sm"
                 style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
               >
@@ -260,7 +760,7 @@ function TaskModalOverlay({
         {!editing && task.description && (
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text2)' }}>Description</p>
-            <p className="text-sm" style={{ color: 'var(--text)' }}>{task.description}</p>
+            <RichTextRenderer html={task.description} />
           </div>
         )}
 
@@ -283,6 +783,12 @@ function TaskModalOverlay({
             ))}
           </div>
         </div>
+
+        {/* Task assignee */}
+        <TaskAssignee projectId={projectId} task={task} onUpdate={invalidate} />
+
+        {/* QA assignee */}
+        <QaAssignee projectId={projectId} task={task} onUpdate={invalidate} />
 
         {/* Task blockers */}
         <BlockerBox projectId={projectId} taskId={task.id} />
@@ -324,9 +830,17 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState<Record<string, string>>({});
   const [timelineForm, setTimelineForm] = useState({ start_date: '', due_date: '' });
+  const [filterMembers, setFilterMembers] = useState<Set<string>>(new Set());
+  const [editingProjectDesc, setEditingProjectDesc] = useState(false);
+  const [projectDescEdit, setProjectDescEdit] = useState('');
+  const [projectDescOriginal, setProjectDescOriginal] = useState('');
+  const [projectDescConfirmDiscard, setProjectDescConfirmDiscard] = useState(false);
+
+  const isProjectDescDirty = editingProjectDesc && projectDescEdit !== projectDescOriginal;
+  useDirtyGuard(isProjectDescDirty);
 
   const { data: project, isLoading, error } = useQuery<Project>({
     queryKey: ['project', projectId],
@@ -369,9 +883,14 @@ export default function ProjectDetail() {
     onSuccess: invalidate,
   });
 
+  const { showToast } = useToast();
+
   const stageMutation = useMutation({
     mutationFn: (stage: string) => api.put(`/projects/${projectId}`, { stage }),
     onSuccess: invalidate,
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
   });
 
   const timelineMutation = useMutation({
@@ -380,6 +899,15 @@ export default function ProjectDetail() {
       due_date: timelineForm.due_date || null,
     }),
     onSuccess: invalidate,
+  });
+
+  const projectDescMutation = useMutation({
+    mutationFn: (description: string) =>
+      api.put(`/projects/${projectId}`, { description: description || null }),
+    onSuccess: () => {
+      setEditingProjectDesc(false);
+      invalidate();
+    },
   });
 
   const notifyMutation = useMutation({
@@ -438,8 +966,35 @@ export default function ProjectDetail() {
     );
   }
 
+  // Collect unique assignees across all tasks for the filter bar
+  const allAssignees = (() => {
+    const seen = new Map<string, TaskAssigneeInfo>();
+    for (const t of tasks) {
+      for (const a of t.assignees ?? []) {
+        if (!seen.has(a.user_id)) seen.set(a.user_id, a);
+      }
+    }
+    return Array.from(seen.values());
+  })();
+
+  function toggleMemberFilter(userId: string) {
+    setFilterMembers((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  // Apply member filter
+  const filteredTasks = filterMembers.size === 0
+    ? tasks
+    : tasks.filter((t) =>
+        (t.assignees ?? []).some((a) => filterMembers.has(a.user_id))
+      );
+
   const tasksByStage = TASK_STAGES.reduce<Record<string, Task[]>>((acc, s) => {
-    acc[s.key] = tasks.filter((t) => t.stage === s.key);
+    acc[s.key] = filteredTasks.filter((t) => t.stage === s.key);
     return acc;
   }, {});
 
@@ -477,7 +1032,8 @@ export default function ProjectDetail() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
+            {projectId && <MembersDropdown projectId={projectId} />}
             <button
               onClick={() => notifyMutation.mutate()}
               disabled={notifyMutation.isPending}
@@ -494,6 +1050,95 @@ export default function ProjectDetail() {
               Copy Share Link
             </button>
           </div>
+        </div>
+
+        {/* Project description */}
+        <div className="mb-4">
+          {projectDescConfirmDiscard && (
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl mb-3"
+              style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)' }}
+            >
+              <span className="text-xs font-medium" style={{ color: 'var(--danger)' }}>
+                You have unsaved changes. Discard them?
+              </span>
+              <button
+                onClick={() => {
+                  setEditingProjectDesc(false);
+                  setProjectDescEdit(projectDescOriginal);
+                  setProjectDescConfirmDiscard(false);
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                style={{ background: 'var(--danger)', color: '#fff' }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => setProjectDescConfirmDiscard(false)}
+                className="text-xs px-3 py-1.5 rounded-lg"
+                style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
+              >
+                Keep Editing
+              </button>
+            </div>
+          )}
+          {editingProjectDesc && !projectDescConfirmDiscard ? (
+            <div className="flex flex-col gap-2">
+              <RichTextEditor
+                content={projectDescEdit}
+                onChange={setProjectDescEdit}
+                placeholder="Add a project description…"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => projectDescMutation.mutate(projectDescEdit)}
+                  disabled={projectDescMutation.isPending}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                  style={{ background: 'var(--accent)', color: '#fff' }}
+                >
+                  {projectDescMutation.isPending ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => {
+                    if (isProjectDescDirty) {
+                      setProjectDescConfirmDiscard(true);
+                    } else {
+                      setEditingProjectDesc(false);
+                      setProjectDescEdit(project.description ?? '');
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs"
+                  style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            !projectDescConfirmDiscard && (
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-semibold" style={{ color: 'var(--text2)' }}>Description</p>
+                  <button
+                    onClick={() => {
+                      setProjectDescEdit(project.description ?? '');
+                      setProjectDescOriginal(project.description ?? '');
+                      setEditingProjectDesc(true);
+                    }}
+                    className="text-xs px-2 py-0.5 rounded"
+                    style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
+                  >
+                    {project.description ? 'Edit' : '+ Add'}
+                  </button>
+                </div>
+                {project.description ? (
+                  <RichTextRenderer html={project.description} />
+                ) : (
+                  <p className="text-xs" style={{ color: 'var(--text3)' }}>No description</p>
+                )}
+              </div>
+            )
+          )}
         </div>
 
         {/* Customer strip */}
@@ -610,7 +1255,50 @@ export default function ProjectDetail() {
       </div>
 
       {/* Task Kanban */}
-      <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--text)' }}>Tasks</h2>
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Tasks</h2>
+
+        {/* Member filter bar */}
+        {allAssignees.length > 0 && (
+          <div className="flex items-center gap-1">
+            {allAssignees.map((a) => {
+              const active = filterMembers.has(a.user_id);
+              return (
+                <button
+                  key={a.user_id}
+                  onClick={() => toggleMemberFilter(a.user_id)}
+                  title={a.display_name || a.username}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+                  style={{
+                    background: avatarColor(a.user_id),
+                    color: '#fff',
+                    opacity: filterMembers.size === 0 || active ? 1 : 0.35,
+                    outline: active ? '2px solid var(--accent)' : '2px solid transparent',
+                    outlineOffset: '2px',
+                  }}
+                >
+                  {(a.display_name ?? a.username)[0].toUpperCase()}
+                </button>
+              );
+            })}
+            {filterMembers.size > 0 && (
+              <button
+                onClick={() => setFilterMembers(new Set())}
+                className="ml-1 text-xs px-2 py-1 rounded-lg"
+                style={{ color: 'var(--text3)', background: 'var(--surface2)' }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
+        {filterMembers.size > 0 && (
+          <span className="text-xs" style={{ color: 'var(--text3)' }}>
+            Showing {filteredTasks.length} of {tasks.length} tasks
+          </span>
+        )}
+      </div>
       <DragDropContext onDragEnd={onTaskDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4 mb-8">
           {TASK_STAGES.map((stage) => (
@@ -635,7 +1323,7 @@ export default function ProjectDetail() {
                     >
                       <TaskCard
                         task={task}
-                        onClick={() => setSelectedTask(task)}
+                        onClick={() => setSelectedTaskId(task.id)}
                         onDuplicate={() => duplicateTaskMutation.mutate(task)}
                       />
                     </div>
@@ -720,13 +1408,17 @@ export default function ProjectDetail() {
       </div>
 
       {/* Task Modal Overlay */}
-      {selectedTask && projectId && (
-        <TaskModalOverlay
-          task={selectedTask}
-          projectId={projectId}
-          onClose={() => setSelectedTask(null)}
-        />
-      )}
+      {selectedTaskId && projectId && (() => {
+        const currentTask = tasks.find((t) => t.id === selectedTaskId);
+        if (!currentTask) return null;
+        return (
+          <TaskModalOverlay
+            task={currentTask}
+            projectId={projectId}
+            onClose={() => setSelectedTaskId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Migration } from './types.js';
 
 export const addUserPermissions: Migration = {
   name: '005_add_user_permissions',
+  disableForeignKeys: true,
   up(db) {
     // --- Expand users table ---
     const userCols = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);
@@ -18,10 +19,6 @@ export const addUserPermissions: Migration = {
 
     // SQLite cannot ALTER CHECK constraints, so we recreate the table
     // to expand role from ('admin','pa') to ('admin','manager','member','viewer')
-    // First migrate existing 'pa' role to 'manager'
-    db.exec("UPDATE users SET role = 'manager' WHERE role = 'pa'");
-
-    // Recreate with new CHECK constraint
     db.exec(`
       CREATE TABLE IF NOT EXISTS users_new (
         id TEXT PRIMARY KEY,
@@ -35,10 +32,12 @@ export const addUserPermissions: Migration = {
       )
     `);
 
-    // Copy data
+    // Copy data, renaming 'pa' role to 'manager' in the process
     db.exec(`
       INSERT OR IGNORE INTO users_new (id, username, password_hash, role, email, display_name, active, created_at)
-      SELECT id, username, password_hash, role, email, display_name, COALESCE(active, 1), created_at
+      SELECT id, username, password_hash,
+        CASE WHEN role = 'pa' THEN 'manager' ELSE role END,
+        email, display_name, COALESCE(active, 1), created_at
       FROM users
     `);
 

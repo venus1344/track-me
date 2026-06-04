@@ -13,6 +13,8 @@ const DEFAULTS: Record<string, string> = {
   brevo_api_key: '',
   email_sender_address: 'noreply@kanboard.app',
   email_sender_name: 'Mooove',
+  qa_self_assign_blocked: 'false',
+  block_project_done_if_tasks_not_done: 'false',
 };
 
 export type SettingsMap = Record<string, string>;

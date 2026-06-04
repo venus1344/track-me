@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { canAccessProject, canModify } from '../middleware/access.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.resolve(__dirname, '../../../uploads');
@@ -82,9 +83,15 @@ export function attachmentRoutes(db: Database.Database): Router {
   router.get('/', (req, res) => {
     const { projectId } = req.params as Record<string, string>;
     const { taskId } = req.query as { taskId?: string };
+
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', projectId)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
+
     const rows = taskId
-      ? db.prepare('SELECT * FROM attachments WHERE project_id = ? AND task_id = ? ORDER BY created_at DESC').all(projectId, taskId)
-      : db.prepare('SELECT * FROM attachments WHERE project_id = ? AND task_id IS NULL ORDER BY created_at DESC').all(projectId);
+      ? db.prepare('SELECT * FROM attachments WHERE project_id = ? AND task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC').all(projectId, taskId)
+      : db.prepare('SELECT * FROM attachments WHERE project_id = ? AND task_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC').all(projectId);
     res.json(rows);
   });
 
@@ -110,7 +117,19 @@ export function attachmentRoutes(db: Database.Database): Router {
         return;
       }
 
-      const projectExists = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+      if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', projectId)) {
+        fs.unlink(req.file.path, () => {});
+        res.status(403).json({ error: 'Not authorized to access this project' });
+        return;
+      }
+
+      if (!canModify(req.session.role ?? '')) {
+        fs.unlink(req.file.path, () => {});
+        res.status(403).json({ error: 'Viewers cannot upload attachments' });
+        return;
+      }
+
+      const projectExists = db.prepare('SELECT id FROM projects WHERE id = ? AND deleted_at IS NULL').get(projectId);
       if (!projectExists) {
         fs.unlink(req.file.path, () => {});
         res.status(404).json({ error: 'Project not found' });
@@ -141,8 +160,14 @@ export function attachmentRoutes(db: Database.Database): Router {
   // GET /:attachmentId/file — stream attachment to authorized project viewers
   router.get('/:attachmentId/file', (req, res) => {
     const { projectId, attachmentId } = req.params as Record<string, string>;
+
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', projectId)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
+
     const attachment = db.prepare(
-      'SELECT id, filename, original_name FROM attachments WHERE id = ? AND project_id = ?'
+      'SELECT id, filename, original_name FROM attachments WHERE id = ? AND project_id = ? AND deleted_at IS NULL'
     ).get(attachmentId, projectId) as AttachmentRow | undefined;
 
     if (!attachment) {
@@ -175,11 +200,22 @@ export function attachmentRoutes(db: Database.Database): Router {
     });
   });
 
-  // DELETE /:attachmentId — delete attachment record + file
+  // DELETE /:attachmentId — soft-delete attachment record + file
   router.delete('/:attachmentId', (req, res) => {
     const { projectId, attachmentId } = req.params as Record<string, string>;
+
+    if (!canAccessProject(db, String(req.session.userId), req.session.role ?? '', projectId)) {
+      res.status(403).json({ error: 'Not authorized to access this project' });
+      return;
+    }
+
+    if (!canModify(req.session.role ?? '')) {
+      res.status(403).json({ error: 'Viewers cannot delete attachments' });
+      return;
+    }
+
     const row = db.prepare(
-      'SELECT * FROM attachments WHERE id = ? AND project_id = ?'
+      'SELECT * FROM attachments WHERE id = ? AND project_id = ? AND deleted_at IS NULL'
     ).get(attachmentId, projectId) as { id: string; filename: string } | undefined;
 
     if (!row) {
@@ -187,7 +223,7 @@ export function attachmentRoutes(db: Database.Database): Router {
       return;
     }
 
-    db.prepare('DELETE FROM attachments WHERE id = ?').run(attachmentId);
+    db.prepare("UPDATE attachments SET deleted_at = datetime('now') WHERE id = ?").run(attachmentId);
 
     const filePath = path.join(uploadsDir, row.filename);
     fs.unlink(filePath, () => {}); // best-effort

@@ -1,6 +1,9 @@
 {
   "name": "kanboard",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "workspaces": [
     "client",
     "server"

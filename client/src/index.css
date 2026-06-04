@@ -3,19 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0c0c14;
-  --sidebar: #0f0f1a;
-  --surface: #141420;
-  --surface2: #1c1c2e;
-  --surface3: #252538;
-  --border: rgba(255,255,255,0.08);
-  --border2: rgba(255,255,255,0.13);
-  --text: #e2e2f0;
-  --text2: #8080a8;
-  --text3: #4a4a68;
-  --accent: #6366f1;
-  --accent-bg: rgba(99,102,241,0.15);
-  --accent-text: #a5b4fc;
+  --bg: #0a0a0a;
+  --sidebar: #131313;
+  --surface: #1a1a1a;
+  --surface2: #242424;
+  --surface3: #2d2d2d;
+  --border: rgba(255,255,255,0.06);
+  --border2: rgba(255,255,255,0.1);
+  --text: #e0e0e0;
+  --text2: #888888;
+  --text3: #555555;
+  --accent: #707070;
+  --accent-bg: rgba(112,112,112,0.12);
+  --accent-text: #b0b0b0;
   --danger: #f87171;
   --danger-bg: rgba(248,113,113,0.12);
   --success: #34d399;
@@ -50,3 +50,214 @@ body {
 }
 
 * { box-sizing: border-box; }
+
+/* ── Rich Text Editor (TipTap) ──────────────────────────────────────────────── */
+
+/* Toolbar buttons */
+.rte-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.rte-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.rte-btn-active {
+  background: var(--accent-bg) !important;
+  color: var(--accent-text) !important;
+}
+
+/* Color picker dropdown */
+.rte-color-group {
+  position: relative;
+}
+.rte-color-group:hover .rte-color-dropdown {
+  display: flex;
+}
+.rte-color-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  z-index: 50;
+  min-width: 130px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.rte-color-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.rte-color-option:hover {
+  background: var(--surface2);
+}
+
+/* ProseMirror editor area */
+.rte-editor .ProseMirror {
+  outline: none;
+  min-height: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.rte-editor .ProseMirror p {
+  margin: 0 0 0.5em;
+}
+.rte-editor .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
+/* Placeholder */
+.rte-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text3);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* ── Rendered Rich Text (view mode) ─────────────────────────────────────────── */
+
+.rte-render {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+}
+.rte-render p {
+  margin: 0 0 0.6em;
+}
+.rte-render p:last-child {
+  margin-bottom: 0;
+}
+.rte-render strong {
+  font-weight: 600;
+}
+.rte-render em {
+  font-style: italic;
+}
+.rte-render u {
+  text-decoration: underline;
+}
+.rte-render ul,
+.rte-render ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.5em;
+}
+.rte-render ul {
+  list-style-type: disc;
+}
+.rte-render ol {
+  list-style-type: decimal;
+}
+.rte-render li {
+  margin-bottom: 0.2em;
+}
+.rte-render li p {
+  margin: 0;
+}
+.rte-render blockquote {
+  margin: 0 0 0.6em;
+  padding: 4px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface2);
+  border-radius: 0 6px 6px 0;
+  color: var(--text2);
+}
+.rte-render pre {
+  margin: 0 0 0.6em;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--surface3);
+  overflow-x: auto;
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.rte-render code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+  background: var(--surface3);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.rte-render pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+.rte-render hr {
+  border: none;
+  border-top: 1px solid var(--border2);
+  margin: 0.8em 0;
+}
+.rte-render h1 { font-size: 1.4em; font-weight: 700; margin: 0.6em 0 0.4em; }
+.rte-render h2 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0 0.3em; }
+.rte-render h3 { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.3em; }
+
+/* Code block inside editor */
+.rte-editor .ProseMirror pre {
+  background: var(--surface3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 0.5em;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--text);
+  overflow-x: auto;
+}
+.rte-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 12px;
+  margin: 0 0 0.5em;
+  background: var(--surface2);
+  border-radius: 0 6px 6px 0;
+  color: var(--text2);
+}
+.rte-editor .ProseMirror hr {
+  border: none;
+  border-top: 2px solid var(--border2);
+  margin: 1em 0;
+}
+.rte-editor .ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin: 0 0 0.5em;
+}
+.rte-editor .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin: 0 0 0.5em;
+}
+.rte-editor .ProseMirror li {
+  margin-bottom: 0.2em;
+}
+.rte-editor .ProseMirror code {
+  background: var(--surface3);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+}

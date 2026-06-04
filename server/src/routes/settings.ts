@@ -9,14 +9,39 @@ const BOOL_KEYS = [
   'email_enabled_stale_blockers',
   'email_enabled_stale_tasks',
   'slack_enabled',
+  'qa_self_assign_blocked',
+  'block_project_done_if_tasks_not_done',
 ];
 
 const INT_KEYS = ['stale_task_days', 'stale_blocker_days'];
 
+const STRING_KEYS = [
+  'cron_schedule',
+  'slack_webhook_url',
+  'email_recipients',
+  'brevo_api_key',
+  'email_sender_address',
+  'email_sender_name',
+];
+
+const ALLOWED_KEYS = new Set([...BOOL_KEYS, ...INT_KEYS, ...STRING_KEYS]);
+
 export function settingsRoutes(db: Database.Database): Router {
   const router = Router();
 
-  // Admin-only guard
+  // Public settings — non-sensitive flags any authenticated user can read
+  const PUBLIC_KEYS = ['qa_self_assign_blocked', 'block_project_done_if_tasks_not_done'];
+
+  router.get('/public', (_req: Request, res: Response) => {
+    const all = getAllSettings(db);
+    const result: Record<string, string> = {};
+    for (const key of PUBLIC_KEYS) {
+      result[key] = all[key] ?? '';
+    }
+    res.json(result);
+  });
+
+  // Admin-only guard for everything below
   router.use((req: Request, res: Response, next: NextFunction) => {
     if (req.session.role !== 'admin') {
       res.status(403).json({ error: 'Admin access required' });
@@ -64,7 +89,15 @@ export function settingsRoutes(db: Database.Database): Router {
       }
     }
 
-    setSettings(db, body);
+    // Whitelist allowed keys — only known settings can be saved
+    const filteredBody: Record<string, string> = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (ALLOWED_KEYS.has(key)) {
+        filteredBody[key] = value;
+      }
+    }
+
+    setSettings(db, filteredBody);
 
     if (body.cron_schedule) {
       reschedule(db);

@@ -164,17 +164,30 @@ export default function Sidebar() {
       {/* Bottom actions */}
       <div className="mt-auto px-2 py-4 flex flex-col gap-1">
         {user?.role === 'admin' && (
-          <NavLink
-            to="/settings"
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={({ isActive }) => ({
-              background: isActive ? 'var(--accent-bg)' : 'transparent',
-              color: isActive ? 'var(--accent-text)' : 'var(--text2)',
-            })}
-          >
-            <span>&#x2699;</span>
-            <span>Settings</span>
-          </NavLink>
+          <>
+            <NavLink
+              to="/users"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={({ isActive }) => ({
+                background: isActive ? 'var(--accent-bg)' : 'transparent',
+                color: isActive ? 'var(--accent-text)' : 'var(--text2)',
+              })}
+            >
+              <span>&#x263A;</span>
+              <span>Users</span>
+            </NavLink>
+            <NavLink
+              to="/settings"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={({ isActive }) => ({
+                background: isActive ? 'var(--accent-bg)' : 'transparent',
+                color: isActive ? 'var(--accent-text)' : 'var(--text2)',
+              })}
+            >
+              <span>&#x2699;</span>
+              <span>Settings</span>
+            </NavLink>
+          </>
         )}
         <button
           onClick={toggle}

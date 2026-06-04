@@ -16,6 +16,8 @@ interface SettingsData {
   brevo_api_key: string;
   email_sender_address: string;
   email_sender_name: string;
+  qa_self_assign_blocked: string;
+  block_project_done_if_tasks_not_done: string;
 }
 
 const DEFAULTS: SettingsData = {
@@ -31,6 +33,8 @@ const DEFAULTS: SettingsData = {
   brevo_api_key: '',
   email_sender_address: 'noreply@kanboard.app',
   email_sender_name: 'Mooove',
+  qa_self_assign_blocked: 'false',
+  block_project_done_if_tasks_not_done: 'false',
 };
 
 function Toggle({
@@ -100,10 +104,15 @@ export default function Settings() {
   }
 
   function toggleField(key: keyof SettingsData) {
+    const newValue = form[key] === 'true' ? 'false' : 'true';
     setForm((prev) => ({
       ...prev,
-      [key]: prev[key] === 'true' ? 'false' : 'true',
+      [key]: newValue,
     }));
+    // Auto-save workflow toggles
+    if (key === 'qa_self_assign_blocked' || key === 'block_project_done_if_tasks_not_done') {
+      saveMutation.mutate({ ...form, [key]: newValue });
+    }
   }
 
   function handleSave() {
@@ -218,6 +227,38 @@ export default function Settings() {
               />
               <p className="text-xs mt-1" style={{ color: 'var(--text3)' }}>
                 Unresolved blockers older than this are flagged
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Workflow */}
+        <div
+          className="rounded-2xl p-5"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <h2 className="text-sm font-semibold uppercase tracking-widest mb-4" style={{ color: 'var(--text3)' }}>
+            Workflow
+          </h2>
+          <div className="flex flex-col gap-4">
+            <div>
+              <Toggle
+                label="Block assignee from being their own QA"
+                checked={form.qa_self_assign_blocked === 'true'}
+                onChange={() => toggleField('qa_self_assign_blocked')}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--text3)' }}>
+                When enabled, a user assigned to a task cannot also be set as that task's QA reviewer
+              </p>
+            </div>
+            <div>
+              <Toggle
+                label="Block project completion if tasks remain undone"
+                checked={form.block_project_done_if_tasks_not_done === 'true'}
+                onChange={() => toggleField('block_project_done_if_tasks_not_done')}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--text3)' }}>
+                When enabled, a project cannot be marked as done until all tasks are completed
               </p>
             </div>
           </div>

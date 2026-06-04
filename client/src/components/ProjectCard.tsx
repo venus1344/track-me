@@ -1,9 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { formatDateOnlyShort, isDateOnlyPast } from '../lib/dates';
+import { stripHtml } from '../lib/html';
 
 interface Project {
   id: string;
   title: string;
+  description?: string;
   stage: string;
   start_date?: string;
   due_date?: string;
@@ -102,9 +104,17 @@ export default function ProjectCard({ project }: { project: Project }) {
       </div>
 
       {/* Title */}
-      <p className="font-semibold text-sm leading-snug mb-3" style={{ color: 'var(--text)' }}>
+      <p className="font-semibold text-sm leading-snug mb-1" style={{ color: 'var(--text)' }}>
         {project.title}
       </p>
+
+      {/* Description preview */}
+      {project.description && stripHtml(project.description, 60) && (
+        <p className="text-xs leading-snug mb-3" style={{ color: 'var(--text3)' }}>
+          {stripHtml(project.description, 60)}
+        </p>
+      )}
+      {!project.description && <div className="mb-3" />}
 
       {/* Due date */}
       {timeline && (

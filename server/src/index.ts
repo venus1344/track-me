@@ -14,9 +14,22 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function requireEnvInProd(name: string): void {
+  if (process.env.NODE_ENV === 'test') return;
+  if (!process.env[name]) {
+    throw new Error(`${name} environment variable is required`);
+  }
+}
+
 const SESSION_SECRET = requireEnv('SESSION_SECRET');
 
-const db = createDb('./kanboard.db');
+// Validate critical env vars in production (skipped in test)
+requireEnvInProd('ADMIN_PASSWORD');
+requireEnvInProd('PA_PASSWORD');
+requireEnvInProd('ALLOWED_ORIGINS');
+
+const dbPath = process.env.DB_PATH ?? './kanboard.db';
+const db = createDb(dbPath);
 
 await seedUsers(db, process.env.ADMIN_PASSWORD, process.env.PA_PASSWORD);
 

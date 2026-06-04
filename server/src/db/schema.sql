@@ -2,7 +2,10 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'pa')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'member', 'viewer')),
+  email TEXT,
+  display_name TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -13,7 +16,8 @@ CREATE TABLE IF NOT EXISTS customers (
   phone TEXT,
   notes TEXT,
   color TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -27,7 +31,8 @@ CREATE TABLE IF NOT EXISTS projects (
   share_token TEXT UNIQUE,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -37,7 +42,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   description TEXT,
   stage TEXT NOT NULL DEFAULT 'todo' CHECK (stage IN ('todo','inprogress','blocked','done')),
   sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  qa_user_id TEXT REFERENCES users(id),
+  assignee_user_id TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS blockers (
@@ -49,7 +57,8 @@ CREATE TABLE IF NOT EXISTS blockers (
   resolution_note TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   resolved_at TEXT,
-  resolved_by_user_id TEXT REFERENCES users(id)
+  resolved_by_user_id TEXT REFERENCES users(id),
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS attachments (
@@ -59,7 +68,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   filename TEXT NOT NULL,
   original_name TEXT NOT NULL,
   size_bytes INTEGER NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS activity (
@@ -82,6 +92,33 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_access TEXT NOT NULL DEFAULT 'all' CHECK (task_access IN ('all', 'assigned')),
+  granted_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT,
+  UNIQUE(project_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS task_assignees (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assigned_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT,
+  UNIQUE(task_id, user_id)
+);
+
 -- Indexes on foreign keys and commonly queried columns
 CREATE INDEX IF NOT EXISTS idx_projects_customer_id ON projects(customer_id);
 CREATE INDEX IF NOT EXISTS idx_projects_stage ON projects(stage);
@@ -99,3 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_user_id ON activity(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_project_id ON notifications(project_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
+CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON project_members(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_task_assignees_task_id ON task_assignees(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_assignees_user_id ON task_assignees(user_id);
