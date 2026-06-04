@@ -41,7 +41,7 @@ export default function Login() {
             K
           </div>
           <span className="text-xl font-semibold" style={{ color: 'var(--text)' }}>
-            Kanboard
+            Mooove
           </span>
         </div>
 

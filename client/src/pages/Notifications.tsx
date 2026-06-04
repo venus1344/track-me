@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { formatUtcDateTime } from '../lib/dates';
 
 interface Notification {
   id: number;
@@ -24,15 +25,6 @@ function typeStyle(type: string): { background: string; color: string; label: st
     default:
       return { background: 'var(--surface3)', color: 'var(--text2)', label: type };
   }
-}
-
-function formatDateTime(date: string) {
-  return new Date(date).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 export default function Notifications() {
@@ -138,7 +130,7 @@ export default function Notifications() {
 
                 {/* Timestamp */}
                 <span className="text-xs shrink-0 mt-1" style={{ color: 'var(--text3)' }}>
-                  {formatDateTime(n.created_at)}
+                  {formatUtcDateTime(n.created_at)}
                 </span>
               </div>
             );

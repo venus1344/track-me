@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import { formatDateOnly, getClientTimeZone } from '../lib/dates';
 
 interface Task {
   id: number;
@@ -11,35 +12,38 @@ interface SharedProject {
   id: number;
   title: string;
   stage: string;
+  start_date?: string;
   due_date?: string;
-  customer?: { name: string };
+  customer_name?: string;
   tasks?: Task[];
   tasks_done?: number;
   tasks_total?: number;
 }
 
 const TASK_STAGES = [
-  { key: 'todo',       label: 'To Do',       color: '#8b5cf6' },
+  { key: 'todo', label: 'To Do', color: '#8b5cf6' },
   { key: 'inprogress', label: 'In Progress', color: '#3b82f6' },
-  { key: 'blocked',    label: 'Blocked',     color: '#f87171' },
-  { key: 'done',       label: 'Done',        color: '#34d399' },
+  { key: 'blocked', label: 'Blocked', color: '#f87171' },
+  { key: 'done', label: 'Done', color: '#34d399' },
 ];
 
 const STAGE_LABELS: Record<string, string> = {
-  scoping:    'Scoping',
-  quoted:     'Quoted',
+  scoping: 'Scoping',
+  quoted: 'Quoted',
   inprogress: 'In Progress',
-  review:     'Review',
-  blocked:    'Blocked',
-  done:       'Done',
+  review: 'Review',
+  blocked: 'Blocked',
+  done: 'Done',
 };
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+function formatTimeline(startDate?: string, dueDate?: string) {
+  if (startDate && dueDate) {
+    if (startDate === dueDate) return formatDateOnly(dueDate, { month: 'long', day: 'numeric', year: 'numeric' });
+    return `${formatDateOnly(startDate, { month: 'long', day: 'numeric', year: 'numeric' })} - ${formatDateOnly(dueDate, { month: 'long', day: 'numeric', year: 'numeric' })}`;
+  }
+  if (startDate) return `Starts ${formatDateOnly(startDate, { month: 'long', day: 'numeric', year: 'numeric' })}`;
+  if (dueDate) return `Due ${formatDateOnly(dueDate, { month: 'long', day: 'numeric', year: 'numeric' })}`;
+  return null;
 }
 
 function ShareContent() {
@@ -48,7 +52,9 @@ function ShareContent() {
   const { data: project, isLoading, error } = useQuery<SharedProject>({
     queryKey: ['share', token],
     queryFn: async () => {
-      const res = await fetch(`/api/share/${token}`);
+      const res = await fetch(`/api/share/${token}`, {
+        headers: { 'X-Client-Timezone': getClientTimeZone() },
+      });
       if (!res.ok) {
         if (res.status === 404) throw new Error('not_found');
         throw new Error(`HTTP ${res.status}`);
@@ -90,6 +96,7 @@ function ShareContent() {
 
   const done = project.tasks_done ?? tasks.filter((t) => t.stage === 'done').length;
   const total = project.tasks_total ?? tasks.length;
+  const timeline = formatTimeline(project.start_date, project.due_date);
 
   return (
     <div className="min-h-screen p-6" style={{ background: 'var(--bg)' }}>
@@ -101,7 +108,7 @@ function ShareContent() {
         >
           K
         </div>
-        <span className="font-semibold" style={{ color: 'var(--text2)' }}>Kanboard</span>
+        <span className="font-semibold" style={{ color: 'var(--text2)' }}>Mooove</span>
         <span className="ml-2 text-sm" style={{ color: 'var(--text3)' }}>— Shared View</span>
       </div>
 
@@ -115,12 +122,12 @@ function ShareContent() {
         </h1>
 
         <div className="flex flex-wrap gap-3 items-center">
-          {project.customer && (
+          {project.customer_name && (
             <span
               className="text-sm px-3 py-1 rounded-full"
               style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
             >
-              {project.customer.name}
+              {project.customer_name}
             </span>
           )}
 
@@ -131,12 +138,12 @@ function ShareContent() {
             {STAGE_LABELS[project.stage] ?? project.stage}
           </span>
 
-          {project.due_date && (
+          {timeline && (
             <span
               className="text-sm px-3 py-1 rounded-full"
               style={{ background: 'var(--surface2)', color: 'var(--text2)' }}
             >
-              Due {formatDate(project.due_date)}
+              {timeline}
             </span>
           )}
 

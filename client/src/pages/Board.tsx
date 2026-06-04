@@ -10,6 +10,7 @@ interface Project {
   id: string;
   title: string;
   stage: string;
+  start_date?: string;
   due_date?: string;
   customer_name?: string;
   customer_color?: string;
@@ -38,7 +39,7 @@ export default function Board() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ title: '', customer_id: '' });
+  const [form, setForm] = useState({ title: '', customer_id: '', start_date: '', due_date: '' });
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ['projects', customerId],
@@ -52,12 +53,12 @@ export default function Board() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: { title: string; customer_id: string }) =>
+    mutationFn: (data: { title: string; customer_id: string; start_date?: string | null; due_date?: string | null }) =>
       api.post('/projects', data),
     onSuccess: (proj: unknown) => {
       void qc.invalidateQueries({ queryKey: ['projects'] });
       setShowNew(false);
-      setForm({ title: '', customer_id: '' });
+      setForm({ title: '', customer_id: '', start_date: '', due_date: '' });
       const p = proj as Project;
       if (p?.id) navigate(`/projects/${p.id}`);
     },
@@ -81,8 +82,15 @@ export default function Board() {
 
   function handleCreate() {
     if (!form.title.trim() || !form.customer_id) return;
-    createMutation.mutate({ title: form.title.trim(), customer_id: form.customer_id });
+    createMutation.mutate({
+      title: form.title.trim(),
+      customer_id: form.customer_id,
+      start_date: form.start_date || null,
+      due_date: form.due_date || null,
+    });
   }
+
+  const timelineInvalid = Boolean(form.start_date && form.due_date && form.start_date > form.due_date);
 
   function onDragEnd(result: DropResult) {
     const { destination, source, draggableId } = result;
@@ -124,7 +132,7 @@ export default function Board() {
       {/* New project form */}
       {showNew && (
         <div
-          className="mb-4 p-4 rounded-xl flex items-end gap-3"
+          className="mb-4 p-4 rounded-xl flex items-end gap-3 flex-wrap"
           style={{ background: 'var(--surface2)', border: '1px solid var(--border2)' }}
         >
           <div className="flex flex-col gap-1 flex-1">
@@ -153,9 +161,29 @@ export default function Board() {
               ))}
             </select>
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: 'var(--text2)' }}>Start date</label>
+            <input
+              type="date"
+              value={form.start_date}
+              onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+              className="px-3 py-2 rounded-lg text-sm outline-none"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: 'var(--text2)' }}>Due date</label>
+            <input
+              type="date"
+              value={form.due_date}
+              onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+              className="px-3 py-2 rounded-lg text-sm outline-none"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </div>
           <button
             onClick={handleCreate}
-            disabled={!form.title.trim() || !form.customer_id || createMutation.isPending}
+            disabled={!form.title.trim() || !form.customer_id || timelineInvalid || createMutation.isPending}
             className="px-4 py-2 rounded-lg text-sm font-semibold"
             style={{ background: 'var(--accent)', color: '#fff' }}
           >
@@ -168,6 +196,11 @@ export default function Board() {
           >
             Cancel
           </button>
+          {timelineInvalid && (
+            <p className="basis-full text-xs" style={{ color: 'var(--danger)' }}>
+              Start date must be on or before due date.
+            </p>
+          )}
         </div>
       )}
 

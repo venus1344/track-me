@@ -1,4 +1,12 @@
 const BASE = '/api';
+const CLIENT_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+function jsonHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    'X-Client-Timezone': CLIENT_TIME_ZONE,
+  };
+}
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -19,6 +27,7 @@ export const api = {
   get<T = unknown>(path: string): Promise<T> {
     return fetch(`${BASE}${path}`, {
       credentials: 'include',
+      headers: { 'X-Client-Timezone': CLIENT_TIME_ZONE },
     }).then((r) => handleResponse<T>(r));
   },
 
@@ -26,7 +35,7 @@ export const api = {
     return fetch(`${BASE}${path}`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonHeaders(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }).then((r) => handleResponse<T>(r));
   },
@@ -35,7 +44,7 @@ export const api = {
     return fetch(`${BASE}${path}`, {
       method: 'PUT',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonHeaders(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }).then((r) => handleResponse<T>(r));
   },
@@ -44,7 +53,7 @@ export const api = {
     return fetch(`${BASE}${path}`, {
       method: 'PATCH',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonHeaders(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }).then((r) => handleResponse<T>(r));
   },
@@ -53,7 +62,7 @@ export const api = {
     return fetch(`${BASE}${path}`, {
       method: 'DELETE',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonHeaders(),
     }).then((r) => handleResponse<T>(r));
   },
 
@@ -61,6 +70,7 @@ export const api = {
     return fetch(`${BASE}${path}`, {
       method: 'POST',
       credentials: 'include',
+      headers: { 'X-Client-Timezone': CLIENT_TIME_ZONE },
       // No Content-Type header — browser sets multipart/form-data with boundary
       body: formData,
     }).then((r) => handleResponse<T>(r));

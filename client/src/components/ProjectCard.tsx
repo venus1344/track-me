@@ -1,9 +1,13 @@
 import { useNavigate } from 'react-router-dom';
+import { formatDateOnlyShort, isDateOnlyPast } from '../lib/dates';
+import { stripHtml } from '../lib/html';
 
 interface Project {
   id: string;
   title: string;
+  description?: string;
   stage: string;
+  start_date?: string;
   due_date?: string;
   customer_name?: string;
   customer_color?: string;
@@ -17,16 +21,14 @@ function customerColor(color?: string) {
   return color ?? '#6366f1';
 }
 
-function isOverdue(dueDate?: string) {
-  if (!dueDate) return false;
-  return new Date(dueDate) < new Date();
-}
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+function formatTimeline(startDate?: string, dueDate?: string) {
+  if (startDate && dueDate) {
+    if (startDate === dueDate) return `Due ${formatDateOnlyShort(dueDate)}`;
+    return `${formatDateOnlyShort(startDate)} - ${formatDateOnlyShort(dueDate)}`;
+  }
+  if (startDate) return `Starts ${formatDateOnlyShort(startDate)}`;
+  if (dueDate) return `Due ${formatDateOnlyShort(dueDate)}`;
+  return null;
 }
 
 interface ProgressRingProps {
@@ -72,9 +74,10 @@ export default function ProjectCard({ project }: { project: Project }) {
   const total = project.tasks_total ?? 0;
   const done = project.tasks_done ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const overdue = isOverdue(project.due_date);
+  const overdue = isDateOnlyPast(project.due_date);
   const hasBlockers = (project.active_blockers ?? project.blocker_count ?? 0) > 0;
   const blockerCount = project.active_blockers ?? project.blocker_count ?? 0;
+  const timeline = formatTimeline(project.start_date, project.due_date);
 
   return (
     <div
@@ -87,9 +90,6 @@ export default function ProjectCard({ project }: { project: Project }) {
     >
       {/* ID + customer */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-mono" style={{ color: 'var(--text3)' }}>
-          PRJ-{project.id}
-        </span>
         {project.customer_name && (
           <span
             className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -104,12 +104,20 @@ export default function ProjectCard({ project }: { project: Project }) {
       </div>
 
       {/* Title */}
-      <p className="font-semibold text-sm leading-snug mb-3" style={{ color: 'var(--text)' }}>
+      <p className="font-semibold text-sm leading-snug mb-1" style={{ color: 'var(--text)' }}>
         {project.title}
       </p>
 
+      {/* Description preview */}
+      {project.description && stripHtml(project.description, 60) && (
+        <p className="text-xs leading-snug mb-3" style={{ color: 'var(--text3)' }}>
+          {stripHtml(project.description, 60)}
+        </p>
+      )}
+      {!project.description && <div className="mb-3" />}
+
       {/* Due date */}
-      {project.due_date && (
+      {timeline && (
         <div className="mb-3">
           <span
             className="text-xs px-2 py-0.5 rounded-full"
@@ -118,7 +126,7 @@ export default function ProjectCard({ project }: { project: Project }) {
               color: overdue ? 'var(--danger)' : 'var(--text2)',
             }}
           >
-            {overdue ? '⚠ ' : ''}Due {formatDate(project.due_date)}
+            {overdue ? '⚠ ' : ''}{timeline}
           </span>
         </div>
       )}

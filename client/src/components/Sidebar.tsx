@@ -1,8 +1,27 @@
+import { useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
+
+function playNotificationSound() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.setValueAtTime(1047, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch {
+    // Audio not available
+  }
+}
 
 interface Customer {
   id: number;
@@ -18,6 +37,7 @@ interface UnreadCount {
 const NAV_LINKS = [
   { to: '/', label: 'Dashboard', icon: '⊞', end: true },
   { to: '/board', label: 'Board', icon: '▦', end: false },
+  { to: '/calendar', label: 'Calendar', icon: '◫', end: false },
   { to: '/customers', label: 'Customers', icon: '👥', end: false },
   { to: '/notifications', label: 'Notifications', icon: '🔔', end: false },
 ];
@@ -33,7 +53,7 @@ function colorForCustomer(id: number, color?: string) {
 }
 
 export default function Sidebar() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
 
@@ -49,6 +69,14 @@ export default function Sidebar() {
   });
 
   const unreadCount = unreadData?.count ?? 0;
+  const prevUnreadRef = useRef(unreadCount);
+
+  useEffect(() => {
+    if (unreadCount > prevUnreadRef.current) {
+      playNotificationSound();
+    }
+    prevUnreadRef.current = unreadCount;
+  }, [unreadCount]);
 
   async function handleLogout() {
     await logout();
@@ -69,10 +97,10 @@ export default function Sidebar() {
           className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-base"
           style={{ background: 'var(--accent)', color: '#fff' }}
         >
-          K
+          M
         </div>
         <span className="font-semibold text-base" style={{ color: 'var(--text)' }}>
-          Kanboard
+          Mooove
         </span>
       </div>
 
@@ -135,6 +163,32 @@ export default function Sidebar() {
 
       {/* Bottom actions */}
       <div className="mt-auto px-2 py-4 flex flex-col gap-1">
+        {user?.role === 'admin' && (
+          <>
+            <NavLink
+              to="/users"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={({ isActive }) => ({
+                background: isActive ? 'var(--accent-bg)' : 'transparent',
+                color: isActive ? 'var(--accent-text)' : 'var(--text2)',
+              })}
+            >
+              <span>&#x263A;</span>
+              <span>Users</span>
+            </NavLink>
+            <NavLink
+              to="/settings"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={({ isActive }) => ({
+                background: isActive ? 'var(--accent-bg)' : 'transparent',
+                color: isActive ? 'var(--accent-text)' : 'var(--text2)',
+              })}
+            >
+              <span>&#x2699;</span>
+              <span>Settings</span>
+            </NavLink>
+          </>
+        )}
         <button
           onClick={toggle}
           className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors w-full"

@@ -41,6 +41,23 @@ describe('Auth routes', () => {
       expect(res.status).toBe(400);
       expect(res.body).toHaveProperty('error');
     });
+
+    it('throttles repeated failed login attempts', async () => {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const res = await request(app)
+          .post('/api/auth/login')
+          .send({ username: 'admin', password: 'wrongpassword' });
+
+        expect(res.status).toBe(401);
+      }
+
+      const limited = await request(app)
+        .post('/api/auth/login')
+        .send({ username: 'admin', password: 'wrongpassword' });
+
+      expect(limited.status).toBe(429);
+      expect(limited.headers).toHaveProperty('retry-after');
+    });
   });
 
   describe('GET /api/auth/me', () => {

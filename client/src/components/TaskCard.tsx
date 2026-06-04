@@ -1,3 +1,5 @@
+import { stripHtml } from '../lib/html';
+
 interface Task {
   id: string;
   title: string;
@@ -17,6 +19,7 @@ export default function TaskCard({ task, onClick, onDuplicate }: TaskCardProps) 
   const isDone = task.stage === 'done';
   const blockerCount = task.active_blockers ?? task.blocker_count ?? 0;
   const hasBlockers = blockerCount > 0;
+  const descPreview = stripHtml(task.description, 60);
 
   return (
     <div
@@ -42,6 +45,11 @@ export default function TaskCard({ task, onClick, onDuplicate }: TaskCardProps) 
           >
             {task.title}
           </p>
+          {descPreview && (
+            <p className="text-xs leading-snug mt-1" style={{ color: 'var(--text3)' }}>
+              {descPreview}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0">

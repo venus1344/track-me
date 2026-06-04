@@ -24,7 +24,7 @@ export function createTestDb(): Database.Database {
     'INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)'
   );
   insert.run(uuidv4(), 'admin', adminHash, 'admin');
-  insert.run(uuidv4(), 'pa', paHash, 'pa');
+  insert.run(uuidv4(), 'pa', paHash, 'manager');
 
   return db;
 }

@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { formatUtcDate } from '../lib/dates';
 
 interface Attachment {
   id: string;
@@ -16,16 +17,18 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+const acceptedUploadTypes = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.mp4,.webm,.mov,.avi';
 
 function getFileType(filename: string): 'image' | 'pdf' | 'video' | 'other' {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) return 'image';
   if (ext === 'pdf') return 'pdf';
   if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return 'video';
   return 'other';
+}
+
+function getAttachmentUrl(projectId: string, attachmentId: string) {
+  return `/api/projects/${projectId}/attachments/${attachmentId}/file`;
 }
 
 function FileTypeBadge({ filename }: { filename: string }) {
@@ -48,8 +51,16 @@ function FileTypeBadge({ filename }: { filename: string }) {
 }
 
 // ── Preview modal ──────────────────────────────────────────────────────────────
-function PreviewModal({ attachment, onClose }: { attachment: Attachment; onClose: () => void }) {
-  const src = `/uploads/${attachment.filename}`;
+function PreviewModal({
+  attachment,
+  onClose,
+  projectId,
+}: {
+  attachment: Attachment;
+  onClose: () => void;
+  projectId: string;
+}) {
+  const src = getAttachmentUrl(projectId, attachment.id);
   const type = getFileType(attachment.filename);
 
   useEffect(() => {
@@ -146,14 +157,14 @@ function PreviewModal({ attachment, onClose }: { attachment: Attachment; onClose
 }
 
 // ── Thumbnail ──────────────────────────────────────────────────────────────────
-function Thumbnail({ attachment }: { attachment: Attachment }) {
+function Thumbnail({ attachment, projectId }: { attachment: Attachment; projectId: string }) {
   const type = getFileType(attachment.filename);
   const [imgError, setImgError] = useState(false);
 
   if (type === 'image' && !imgError) {
     return (
       <img
-        src={`/uploads/${attachment.filename}`}
+        src={getAttachmentUrl(projectId, attachment.id)}
         alt=""
         onError={() => setImgError(true)}
         className="rounded shrink-0"
@@ -234,7 +245,12 @@ export default function AttachmentsSection({ projectId, taskId }: Props) {
             style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border)' }}
           >
             {uploadMutation.isPending ? 'Uploading…' : 'Upload'}
-            <input type="file" className="hidden" onChange={handleFileChange} />
+            <input
+              type="file"
+              accept={acceptedUploadTypes}
+              className="hidden"
+              onChange={handleFileChange}
+            />
           </label>
         </div>
 
@@ -254,7 +270,7 @@ export default function AttachmentsSection({ projectId, taskId }: Props) {
                   className="shrink-0 rounded overflow-hidden hover:opacity-80 transition-opacity"
                   style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Thumbnail attachment={a} />
+                  <Thumbnail attachment={a} projectId={projectId} />
                 </button>
 
                 {/* Name — click to preview */}
@@ -273,7 +289,7 @@ export default function AttachmentsSection({ projectId, taskId }: Props) {
                 </span>
 
                 <span className="text-xs shrink-0" style={{ color: 'var(--text3)' }}>
-                  {formatDate(a.created_at)}
+                      {formatUtcDate(a.created_at, { month: 'short', day: 'numeric' })}
                 </span>
 
                 <button
@@ -291,7 +307,11 @@ export default function AttachmentsSection({ projectId, taskId }: Props) {
       </div>
 
       {previewing && (
-        <PreviewModal attachment={previewing} onClose={() => setPreviewing(null)} />
+        <PreviewModal
+          attachment={previewing}
+          onClose={() => setPreviewing(null)}
+          projectId={projectId}
+        />
       )}
     </>
   );

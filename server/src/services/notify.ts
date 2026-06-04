@@ -54,17 +54,43 @@ export async function sendEmailNotification(
   apiKey: string,
   to: string,
   subject: string,
-  html: string
+  html: string,
+  senderEmail = 'noreply@kanboard.app',
+  senderName = 'Mooove'
 ): Promise<void> {
-  if (apiKey.includes('xxx')) return;
+  if (!apiKey || apiKey.includes('xxx')) return;
   try {
-    const { Resend } = await import('resend');
-    const resend = new Resend(apiKey);
-    await resend.emails.send({
-      from: 'Kanboard <noreply@kanboard.app>',
-      to,
+    const { BrevoClient } = await import('@getbrevo/brevo');
+    const client = new BrevoClient({ apiKey });
+    await client.transactionalEmails.sendTransacEmail({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: to }],
       subject,
-      html,
+      htmlContent: html,
+    });
+  } catch {
+    // Best-effort — do not throw
+  }
+}
+
+export async function sendEmailDigest(
+  apiKey: string,
+  recipients: string[],
+  subject: string,
+  html: string,
+  senderEmail = 'noreply@kanboard.app',
+  senderName = 'Mooove'
+): Promise<void> {
+  if (!apiKey || apiKey.includes('xxx')) return;
+  if (recipients.length === 0) return;
+  try {
+    const { BrevoClient } = await import('@getbrevo/brevo');
+    const client = new BrevoClient({ apiKey });
+    await client.transactionalEmails.sendTransacEmail({
+      sender: { email: senderEmail, name: senderName },
+      to: recipients.map((email) => ({ email })),
+      subject,
+      htmlContent: html,
     });
   } catch {
     // Best-effort — do not throw
