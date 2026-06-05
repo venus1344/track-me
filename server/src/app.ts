@@ -61,7 +61,7 @@ export function createApp(db: Database.Database, sessionSecret: string) {
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.COOKIE_SECURE === 'true',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   }));
@@ -81,11 +81,10 @@ export function createApp(db: Database.Database, sessionSecret: string) {
 
   // Serve static frontend files and SPA fallback (production)
   if (process.env.NODE_ENV === 'production') {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const clientDist = path.resolve(__dirname, '../../client/dist');
+    const clientDist = '/app/client/dist';
     app.use(express.static(clientDist));
     // SPA fallback — serve index.html for all non-API routes
-    app.get('*', (_req, res) => {
+    app.use((_req, res) => {
       res.sendFile(path.join(clientDist, 'index.html'));
     });
   }
