@@ -23,17 +23,21 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install only production dependencies
+# Copy package files and built node_modules from builder
 COPY package.json package-lock.json ./
 COPY client/package.json client/
 COPY server/package.json server/
-
-RUN npm ci --production
+COPY --from=builder /app/node_modules node_modules
+COPY --from=builder /app/server/node_modules server/node_modules
+COPY --from=builder /app/client/node_modules client/node_modules
 
 # Copy built artifacts from builder
 COPY --from=builder /app/client/dist client/dist
 COPY --from=builder /app/server/dist server/dist
-COPY server/src/db server/src/db
+
+# Copy schema and migration files (not compiled, needed at runtime)
+COPY server/src/db/schema.sql server/dist/db/
+COPY server/src/db/migrations server/dist/db/migrations
 
 # Expose port
 EXPOSE 3001
