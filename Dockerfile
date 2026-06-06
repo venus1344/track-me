@@ -24,12 +24,12 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Copy package files and built node_modules from builder
+# (npm workspaces hoists client deps to root node_modules — no client/node_modules dir)
 COPY package.json package-lock.json ./
 COPY client/package.json client/
 COPY server/package.json server/
 COPY --from=builder /app/node_modules node_modules
 COPY --from=builder /app/server/node_modules server/node_modules
-COPY --from=builder /app/client/node_modules client/node_modules
 
 # Copy built artifacts from builder
 COPY --from=builder /app/client/dist client/dist

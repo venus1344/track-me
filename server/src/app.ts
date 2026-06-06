@@ -26,6 +26,9 @@ export function createApp(db: Database.Database, sessionSecret: string) {
   const app = express();
   app.disable('x-powered-by');
 
+  // Trust the reverse proxy (Caddy) so secure cookies and req.ip work correctly
+  app.set('trust proxy', 1);
+
   // Security headers via Helmet
   app.use(helmet());
 
