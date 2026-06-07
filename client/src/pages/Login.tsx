@@ -5,6 +5,7 @@ export default function Login() {
   const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -85,19 +86,31 @@ export default function Login() {
             <label className="text-sm font-medium" style={{ color: 'var(--text2)' }}>
               Password
             </label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="px-3 py-2 rounded-lg text-sm outline-none"
-              style={{
-                background: 'var(--surface2)',
-                border: '1px solid var(--border2)',
-                color: 'var(--text)',
-              }}
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full px-3 py-2 pr-14 rounded-lg text-sm outline-none"
+                style={{
+                  background: 'var(--surface2)',
+                  border: '1px solid var(--border2)',
+                  color: 'var(--text)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium"
+                style={{ color: 'var(--text2)' }}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </div>
 
           <button
